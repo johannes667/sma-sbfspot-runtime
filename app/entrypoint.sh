@@ -6,7 +6,7 @@ CFG="${SBFSPOT_CFG:-$CONFIG_DIR/SBFspot.cfg}"
 INTERVAL="${INTERVAL:-300}"
 mkdir -p "$CONFIG_DIR" "$DATA_DIR"
 if [[ ! -f "$CFG" ]]; then
-  cp /config/SBFspot.cfg.example "$CFG"
+  cp /config/SBFspot.cfg "$CFG"
   echo "Created default config at $CFG. Please edit it and restart."
 fi
 cd /
