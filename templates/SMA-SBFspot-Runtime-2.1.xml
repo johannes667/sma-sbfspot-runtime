@@ -13,7 +13,7 @@
   <Category>Tools: Utilities: Network:HomeAutomation</Category>
   <WebUI>http://[IP]:[PORT:8088]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/johannes667/sma-sbfspot-runtime/main/templates/SMA-SBFspot-Runtime-2.1.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/johannes667/sma-sbfspot-runtime/main/web/static/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/johannes667/sma-sbfspot-runtime/main/web/static/A377D627-20DE-49B1-B2C7-188DA0D8D200.png</Icon>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
