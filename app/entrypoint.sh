@@ -37,6 +37,7 @@ while true; do
   if command -v SBFspot >/dev/null 2>&1; then
     cd /usr/local/bin
     ./SBFspot -cfg"$CFG" -v -finq || true
+    python3 /app/update_state.py || true
   else
     echo "ERROR: SBFspot not found."
   fi
