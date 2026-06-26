@@ -35,26 +35,28 @@ def read_latest_row(path):
     with open(path, newline="", encoding="utf-8", errors="ignore") as f:
         rows = list(csv.reader(f, delimiter=";"))
 
-    rows = [r for r in rows if r]
+    rows = [[x.strip() for x in r] for r in rows if r]
 
     header = None
     data_rows = []
 
     for row in rows:
-        clean = [x.strip() for x in row]
-
-        if "DeviceName" in clean and "PACTot" in clean:
-            header = clean
+        if "DeviceName" in row and "DeviceType" in row and "Serial" in row:
+            header = row
             continue
 
-        if header and len(clean) >= len(header):
-            data_rows.append(clean)
+        if header:
+            # echte Datenzeilen beginnen mit Datum/Uhrzeit, z. B. 26/06/2026 09:19:48
+            first = row[0] if row else ""
+            if "/" in first and ":" in first:
+                if len(row) < len(header):
+                    row = row + [""] * (len(header) - len(row))
+                data_rows.append(row[:len(header)])
 
     if not header or not data_rows:
         raise RuntimeError("Keine passende SBFspot Spot-CSV-Zeile gefunden")
 
-    row = data_rows[-1]
-    return dict(zip(header, row))
+    return dict(zip(header, data_rows[-1]))
 
 
 def get(row, *names):
