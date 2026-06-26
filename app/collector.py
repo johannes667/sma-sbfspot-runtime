@@ -13,7 +13,7 @@ def main():
         state={'status':'config_missing','timestamp':now_iso(),'last_error':f'{SBFSPOT_CFG} fehlt'}
         write_state(state); publish_state(state); return
     try:
-        proc=subprocess.run(['SBFspot','-finq','-nocsv',f'-cfg:{SBFSPOT_CFG}'], cwd='/', text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=240)
+        proc=subprocess.run(['SBFspot','-d5','-v5','-finq','-nocsv',f'-cfg:{SBFSPOT_CFG}'], cwd='/', text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=240)
         output=proc.stdout or ''
         parsed=parse_output(output)
         ok=proc.returncode==0 and parsed.get('raw_ok')
