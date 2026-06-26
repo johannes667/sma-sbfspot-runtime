@@ -1,43 +1,60 @@
 import re
-PATTERNS={
- 'power_w':[r'SPOT_PACTOT\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'pac1_w':[r'SPOT_PAC1\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'pac2_w':[r'SPOT_PAC2\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'pac3_w':[r'SPOT_PAC3\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'energy_today_kwh':[r'SPOT_ETODAY\s*:\s*([-+]?\d+(?:[.,]\d+)?)',r'EToday:\s*([-+]?\d+(?:[.,]\d+)?)kWh'],
- 'energy_total_kwh':[r'SPOT_ETOTAL\s*:\s*([-+]?\d+(?:[.,]\d+)?)',r'ETotal:\s*([-+]?\d+(?:[.,]\d+)?)kWh'],
- 'pdc1_w':[r'SPOT_PDC1\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'pdc2_w':[r'SPOT_PDC2\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'dc_voltage_1_v':[r'SPOT_UDC1\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'dc_voltage_2_v':[r'SPOT_UDC2\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'dc_current_1_a':[r'SPOT_IDC1\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'dc_current_2_a':[r'SPOT_IDC2\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'ac_voltage_1_v':[r'SPOT_UAC1\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'ac_current_1_a':[r'SPOT_IAC1\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'frequency_hz':[r'SPOT_FREQ\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'temperature_c':[r'Device Temperature:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'operation_time_h':[r'SPOT_OPERTM\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
- 'feed_in_time_h':[r'SPOT_FEEDTM\s*:\s*([-+]?\d+(?:[.,]\d+)?)'],
-}
-def num(v):
+from typing import Any, Dict, Optional
+
+def _to_number(value: str) -> Optional[float]:
     try:
-        x=float(v.replace(',','.'))
-        return int(x) if x.is_integer() else x
-    except Exception: return None
-def parse_output(text):
-    data={}
-    for k, pats in PATTERNS.items():
-        data[k]=None
-        for p in pats:
-            m=re.search(p,text,re.I)
-            if m:
-                data[k]=num(m.group(1)); break
-    if data.get('pdc1_w') is not None and data.get('pdc2_w') is not None:
-        data['pdc_total_w']=data['pdc1_w']+data['pdc2_w']
-    else: data['pdc_total_w']=None
-    pdc=data.get('pdc_total_w'); pac=data.get('power_w')
-    data['efficiency_percent']=round((pac/pdc)*100,2) if pdc and pac is not None and pdc>0 else None
-    m=re.search(r'Serial Nr:.*?\((\d+)\)',text) or re.search(r'SN:\s*(\d+)',text)
-    data['serial']=m.group(1) if m else None
-    data['raw_ok']='INFO: Done.' in text or any(data.get(k) is not None for k in ('power_w','energy_today_kwh'))
+        number = float(value.strip().replace(',', '.'))
+        return int(number) if number.is_integer() else round(number, 3)
+    except Exception:
+        return None
+
+def _first_number_after(label: str, text: str) -> Optional[float]:
+    pattern = rf"^{re.escape(label)}\s*:\s*([-+]?\d+(?:[.,]\d+)?)"
+    for line in text.splitlines():
+        m = re.search(pattern, line.strip(), re.IGNORECASE)
+        if m: return _to_number(m.group(1))
+    return None
+
+def _label_number(label_regex: str, text: str) -> Optional[float]:
+    for line in text.splitlines():
+        m = re.search(label_regex, line.strip(), re.IGNORECASE)
+        if m: return _to_number(m.group(1))
+    return None
+
+def parse_output(text: str) -> Dict[str, Any]:
+    data = {
+        'power_w': _first_number_after('SPOT_PACTOT', text),
+        'pac1_w': _first_number_after('SPOT_PAC1', text),
+        'pac2_w': _first_number_after('SPOT_PAC2', text),
+        'pac3_w': _first_number_after('SPOT_PAC3', text),
+        'energy_today_kwh': _first_number_after('SPOT_ETODAY', text),
+        'energy_total_kwh': _first_number_after('SPOT_ETOTAL', text),
+        'pdc1_w': _first_number_after('SPOT_PDC1', text),
+        'pdc2_w': _first_number_after('SPOT_PDC2', text),
+        'dc_voltage_1_v': _first_number_after('SPOT_UDC1', text),
+        'dc_voltage_2_v': _first_number_after('SPOT_UDC2', text),
+        'dc_current_1_a': _first_number_after('SPOT_IDC1', text),
+        'dc_current_2_a': _first_number_after('SPOT_IDC2', text),
+        'ac_voltage_1_v': _first_number_after('SPOT_UAC1', text),
+        'ac_current_1_a': _first_number_after('SPOT_IAC1', text),
+        'frequency_hz': _first_number_after('SPOT_FREQ', text),
+        'temperature_c': _label_number(r'Device Temperature:\s*([-+]?\d+(?:[.,]\d+)?)', text),
+        'operation_time_h': _first_number_after('SPOT_OPERTM', text),
+        'feed_in_time_h': _first_number_after('SPOT_FEEDTM', text),
+    }
+    if data['energy_today_kwh'] is None: data['energy_today_kwh'] = _label_number(r'\bEToday:\s*([-+]?\d+(?:[.,]\d+)?)\s*kWh', text)
+    if data['energy_total_kwh'] is None: data['energy_total_kwh'] = _label_number(r'\bETotal:\s*([-+]?\d+(?:[.,]\d+)?)\s*kWh', text)
+    p1, p2 = data.get('pdc1_w'), data.get('pdc2_w')
+    data['pdc_total_w'] = round((p1 or 0) + (p2 or 0), 3) if p1 is not None or p2 is not None else None
+    if data['pdc_total_w'] and data.get('power_w') is not None and data['pdc_total_w'] > 0:
+        data['efficiency_percent'] = round(data['power_w'] / data['pdc_total_w'] * 100, 2)
+    else:
+        data['efficiency_percent'] = _label_number(r'Efficiency\s*:\s*([-+]?\d+(?:[.,]\d+)?)\s*%', text)
+    serial = None
+    for pattern in (r'Serial Nr:.*?\((\d+)\)', r'SN:\s*(\d+)', r'SUSyID:\s*\d+\s*-\s*SN:\s*(\d+)'):
+        m = re.search(pattern, text)
+        if m:
+            serial = m.group(1); break
+    data['serial'] = serial
+    data['raw_ok'] = any(data.get(k) is not None for k in ('power_w','energy_today_kwh','energy_total_kwh','temperature_c','pdc1_w','pac1_w')) and ('INFO: Done.' in text or 'Energy Production:' in text or 'AC Spot Data:' in text)
     return data

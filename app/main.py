@@ -1,15 +1,15 @@
 from flask import Flask, jsonify
 from config import WEB_PORT
 from storage import read_state, history
-app=Flask(__name__, static_folder='/web/static')
+app=Flask(__name__, static_folder='/web/static', static_url_path='')
 @app.route('/')
 def index(): return app.send_static_file('index.html')
 @app.route('/api/live')
 @app.route('/api/state')
-def live(): return jsonify(read_state())
+def api_state(): return jsonify(read_state())
 @app.route('/api/history')
-def hist(): return jsonify(history())
+def api_history(): return jsonify(history())
 @app.route('/api/status')
-def status():
+def api_status():
     s=read_state(); return jsonify({'status':s.get('status'),'timestamp':s.get('timestamp'),'last_error':s.get('last_error','')})
 if __name__=='__main__': app.run(host='0.0.0.0', port=WEB_PORT)

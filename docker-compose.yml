@@ -1,7 +1,7 @@
 services:
   sma-sbfspot-runtime:
+    image: ghcr.io/johannes667/sma-sbfspot-runtime:latest
     build: .
-    image: local/sma-sbfspot-runtime:2.1
     container_name: SMA-SBFspot-Runtime
     network_mode: host
     privileged: true

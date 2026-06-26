@@ -1,25 +1,32 @@
 import json, os, sqlite3
+from typing import Dict, Any, List
 from config import STATE_FILE, DB_FILE, DATA_DIR
+
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     with sqlite3.connect(DB_FILE) as con:
         con.execute('CREATE TABLE IF NOT EXISTS samples (ts TEXT PRIMARY KEY, power_w REAL, energy_today_kwh REAL, energy_total_kwh REAL, temperature_c REAL, pdc1_w REAL, pdc2_w REAL, efficiency_percent REAL)')
         con.commit()
-def write_state(state):
+
+def write_state(state: Dict[str, Any]):
     os.makedirs(DATA_DIR, exist_ok=True)
     tmp=STATE_FILE+'.tmp'
     with open(tmp,'w',encoding='utf-8') as f: json.dump(state,f,indent=2,ensure_ascii=False)
-    os.replace(tmp,STATE_FILE)
-def read_state():
+    os.replace(tmp, STATE_FILE)
+
+def read_state() -> Dict[str, Any]:
     try:
-        with open(STATE_FILE,encoding='utf-8') as f: return json.load(f)
-    except Exception as e: return {'status':'waiting','timestamp':None,'last_error':str(e)}
-def save_sample(s):
+        with open(STATE_FILE,'r',encoding='utf-8') as f: return json.load(f)
+    except Exception as e:
+        return {'status':'waiting','timestamp':None,'last_error':str(e)}
+
+def save_sample(state: Dict[str, Any]):
     init_db()
     with sqlite3.connect(DB_FILE) as con:
-        con.execute('INSERT OR REPLACE INTO samples VALUES (?,?,?,?,?,?,?,?)',(s.get('timestamp'),s.get('power_w'),s.get('energy_today_kwh'),s.get('energy_total_kwh'),s.get('temperature_c'),s.get('pdc1_w'),s.get('pdc2_w'),s.get('efficiency_percent')))
+        con.execute('INSERT OR REPLACE INTO samples (ts,power_w,energy_today_kwh,energy_total_kwh,temperature_c,pdc1_w,pdc2_w,efficiency_percent) VALUES (?,?,?,?,?,?,?,?)',(state.get('timestamp'),state.get('power_w'),state.get('energy_today_kwh'),state.get('energy_total_kwh'),state.get('temperature_c'),state.get('pdc1_w'),state.get('pdc2_w'),state.get('efficiency_percent')))
         con.commit()
-def history(limit=288):
+
+def history(limit:int=288) -> List[Dict[str,Any]]:
     init_db()
     with sqlite3.connect(DB_FILE) as con:
         con.row_factory=sqlite3.Row
