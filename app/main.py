@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 
 from config import VERSION, WEB_PORT
+from forecast_solar import get_forecast
 from storage import history, read_state
 
 app = Flask(__name__, static_folder="/web/static", static_url_path="")
@@ -14,9 +15,7 @@ def index():
 @app.route("/api/live")
 @app.route("/api/state")
 def api_state():
-    state = read_state()
-    state.setdefault("version", VERSION)
-    return jsonify(state)
+    return jsonify(read_state())
 
 
 @app.route("/api/history")
@@ -24,15 +23,15 @@ def api_history():
     return jsonify(history())
 
 
+@app.route("/api/forecast")
+def api_forecast():
+    return jsonify(get_forecast(False))
+
+
 @app.route("/api/status")
 def api_status():
     s = read_state()
-    return jsonify({
-        "status": s.get("status"),
-        "timestamp": s.get("timestamp"),
-        "version": s.get("version", VERSION),
-        "last_error": s.get("last_error", ""),
-    })
+    return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "last_error": s.get("last_error", "")})
 
 
 if __name__ == "__main__":

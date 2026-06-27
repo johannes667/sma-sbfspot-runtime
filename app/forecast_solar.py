@@ -1,186 +1,215 @@
 import json
 import os
 import time
-import urllib.parse
-import urllib.request
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, date, timezone
+from typing import Any, Dict, List, Tuple
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from config import (
     FORECAST_API_KEY,
-    FORECAST_AZIMUTH,
+    FORECAST_ARRAYS,
     FORECAST_CACHE_FILE,
-    FORECAST_DAMPING,
-    FORECAST_DECLINATION,
     FORECAST_ENABLE,
     FORECAST_INTERVAL,
-    FORECAST_INVERTER_KW,
-    FORECAST_KWP,
     FORECAST_LATITUDE,
+    FORECAST_LEARNING_DAYS,
+    FORECAST_LEARNING_ENABLE,
+    FORECAST_LEARNING_FILE,
     FORECAST_LONGITUDE,
 )
-from forecast_learning import current_factor, refresh_learning
 
 
-def _to_float(value: Any) -> Optional[float]:
+def _read_json(path: str, default: Any):
     try:
-        if value is None or str(value).strip() == "":
-            return None
-        return float(str(value).replace(",", "."))
-    except Exception:
-        return None
-
-
-def _read_cache() -> Dict[str, Any]:
-    try:
-        with open(FORECAST_CACHE_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {}
+        return default
 
 
-def _write_cache(data: Dict[str, Any]) -> None:
-    os.makedirs(os.path.dirname(FORECAST_CACHE_FILE), exist_ok=True)
-    tmp = FORECAST_CACHE_FILE + ".tmp"
+def _write_json(path: str, data: Any):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, FORECAST_CACHE_FILE)
+    os.replace(tmp, path)
 
 
-def _api_url() -> str:
-    lat = urllib.parse.quote(str(FORECAST_LATITUDE), safe="")
-    lon = urllib.parse.quote(str(FORECAST_LONGITUDE), safe="")
-    dec = urllib.parse.quote(str(FORECAST_DECLINATION), safe="")
-    az = urllib.parse.quote(str(FORECAST_AZIMUTH), safe="")
-    kwp = urllib.parse.quote(str(FORECAST_KWP), safe="")
-    prefix = f"/{urllib.parse.quote(FORECAST_API_KEY, safe='')}" if FORECAST_API_KEY else ""
-    url = f"https://api.forecast.solar{prefix}/estimate/{lat}/{lon}/{dec}/{az}/{kwp}"
-
-    params = {}
-    if FORECAST_DAMPING not in ("", "0", "0.0"):
-        params["damping"] = FORECAST_DAMPING
-    if FORECAST_INVERTER_KW:
-        params["inverter"] = FORECAST_INVERTER_KW
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-    return url
-
-
-def _parse_dt(text: str) -> Optional[datetime]:
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            dt = datetime.strptime(text, fmt)
-            if dt.tzinfo is not None:
-                return dt.astimezone().replace(tzinfo=None)
-            return dt
-        except Exception:
-            pass
+def _ts_to_epoch(ts: str) -> float:
+    # Forecast.Solar liefert meist "YYYY-mm-dd HH:MM:SS" lokal.
     try:
-        return datetime.fromisoformat(text).astimezone().replace(tzinfo=None)
+        if "T" in ts:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        return datetime.fromisoformat(ts.replace(" ", "T")).timestamp()
     except Exception:
-        return None
+        return 0
 
 
-def _scale(value: Optional[float], factor: float, digits: int = 3) -> Optional[float]:
-    if value is None:
-        return None
-    return round(max(0.0, value * factor), digits)
+def _now_power_from_series(watts: Dict[str, float]) -> float:
+    if not watts:
+        return 0.0
+    now = time.time()
+    points = sorted((_ts_to_epoch(k), float(v)) for k, v in watts.items())
+    points = [p for p in points if p[0] > 0]
+    if not points:
+        return 0.0
+    if now <= points[0][0]:
+        return points[0][1]
+    if now >= points[-1][0]:
+        return points[-1][1]
+    for (t1, v1), (t2, v2) in zip(points, points[1:]):
+        if t1 <= now <= t2:
+            if t2 == t1:
+                return v1
+            ratio = (now - t1) / (t2 - t1)
+            return v1 + (v2 - v1) * ratio
+    return 0.0
 
 
-def _clean_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    learning = refresh_learning()
-    factor = current_factor()
+def _today_key() -> str:
+    return datetime.now().astimezone().date().isoformat()
 
-    result = payload.get("result", payload)
-    watts = result.get("watts") or result.get("watt") or {}
-    watt_hours_day = result.get("watt_hours_day") or {}
-    watt_hours_period = result.get("watt_hours_period") or {}
 
-    raw_points: List[Dict[str, Any]] = []
-    corrected_points: List[Dict[str, Any]] = []
-    for ts, value in watts.items():
-        dt = _parse_dt(str(ts))
-        val = _to_float(value)
-        if dt is not None and val is not None:
-            raw_w = max(0.0, val)
-            raw_points.append({"ts": dt.isoformat(timespec="minutes"), "w": round(raw_w, 1)})
-            corrected_points.append({"ts": dt.isoformat(timespec="minutes"), "w": round(raw_w * factor, 1)})
-    raw_points.sort(key=lambda p: p["ts"])
-    corrected_points.sort(key=lambda p: p["ts"])
+def _fetch_array(array: Dict[str, Any]) -> Dict[str, Any]:
+    declination = float(array.get("declination", 35))
+    azimuth = float(array.get("azimuth", 0))
+    peak_power = float(array.get("peak_power", array.get("kwp", 0)))
+    damping = array.get("damping", 0)
 
-    now = datetime.now()
-    today_key = now.date().isoformat()
-    tomorrow_key = (now.date() + timedelta(days=1)).isoformat()
+    base = f"https://api.forecast.solar/estimate/{FORECAST_LATITUDE}/{FORECAST_LONGITUDE}/{declination}/{azimuth}/{peak_power}"
+    params = {}
+    if damping not in (None, "", 0, "0"):
+        params["damping"] = damping
+    if FORECAST_API_KEY:
+        params["token"] = FORECAST_API_KEY
+    url = base + (("?" + urlencode(params)) if params else "")
+    req = Request(url, headers={"User-Agent": "sma-sbfspot-runtime/2.2"})
+    with urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
-    today_wh = _to_float(watt_hours_day.get(today_key))
-    tomorrow_wh = _to_float(watt_hours_day.get(tomorrow_key))
 
-    def _nearest_power(points: List[Dict[str, Any]], min_dt: Optional[datetime] = None) -> Optional[float]:
-        parsed = [(p, _parse_dt(p["ts"])) for p in points]
-        parsed = [(p, dt) for p, dt in parsed if dt is not None]
-        if min_dt is not None:
-            parsed = [(p, dt) for p, dt in parsed if dt >= min_dt]
-            return parsed[0][0]["w"] if parsed else None
-        if parsed:
-            return min(parsed, key=lambda item: abs((item[1] - now).total_seconds()))[0]["w"]
-        return None
+def _aggregate(results: List[Tuple[Dict[str, Any], Dict[str, Any]]]) -> Dict[str, Any]:
+    watts: Dict[str, float] = {}
+    watt_hours_period: Dict[str, float] = {}
+    watt_hours_day: Dict[str, float] = {}
+    arrays = []
 
-    raw_now_power = _nearest_power(raw_points)
-    corrected_now_power = _nearest_power(corrected_points)
-    corrected_next_hour_power = _nearest_power(corrected_points, now + timedelta(hours=1))
-
-    remaining_wh_raw = 0.0
-    for ts, value in watt_hours_period.items():
-        dt = _parse_dt(str(ts))
-        val = _to_float(value)
-        if dt is not None and val is not None and dt >= now and dt.date() == now.date():
-            remaining_wh_raw += val
-
-    today_raw_kwh = round(today_wh / 1000, 3) if today_wh is not None else None
-    tomorrow_raw_kwh = round(tomorrow_wh / 1000, 3) if tomorrow_wh is not None else None
-    remaining_raw_kwh = round(remaining_wh_raw / 1000, 3) if remaining_wh_raw else None
+    for array, data in results:
+        result = data.get("result", {}) if isinstance(data, dict) else {}
+        for ts, value in (result.get("watts") or {}).items():
+            watts[ts] = watts.get(ts, 0.0) + float(value or 0)
+        for ts, value in (result.get("watt_hours_period") or {}).items():
+            watt_hours_period[ts] = watt_hours_period.get(ts, 0.0) + float(value or 0)
+        for day, value in (result.get("watt_hours_day") or {}).items():
+            watt_hours_day[day] = watt_hours_day.get(day, 0.0) + float(value or 0)
+        arrays.append({
+            "name": array.get("name", "PV"),
+            "peak_power": float(array.get("peak_power", array.get("kwp", 0))),
+            "declination": float(array.get("declination", 35)),
+            "azimuth": float(array.get("azimuth", 0)),
+        })
 
     return {
-        "forecast_updated": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "forecast_correction_factor": round(factor, 3),
-        "forecast_accuracy_days": learning.get("days_used", 0),
-        "forecast_today_raw_kwh": today_raw_kwh,
-        "forecast_tomorrow_raw_kwh": tomorrow_raw_kwh,
-        "forecast_power_now_raw_w": raw_now_power,
-        "forecast_today_kwh": _scale(today_raw_kwh, factor),
-        "forecast_tomorrow_kwh": _scale(tomorrow_raw_kwh, factor),
-        "forecast_remaining_today_kwh": _scale(remaining_raw_kwh, factor),
-        "forecast_power_now_w": corrected_now_power,
-        "forecast_power_next_hour_w": corrected_next_hour_power,
-        "forecast_points": corrected_points[:240],
-        "forecast_points_raw": raw_points[:240],
-        "forecast_rate_limit": payload.get("message", {}).get("ratelimit", {}) if isinstance(payload.get("message"), dict) else {},
+        "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "arrays": arrays,
+        "watts": dict(sorted(watts.items())),
+        "watt_hours_period": dict(sorted(watt_hours_period.items())),
+        "watt_hours_day": dict(sorted(watt_hours_day.items())),
     }
+
+
+def get_learning_factor() -> float:
+    learning = _read_json(FORECAST_LEARNING_FILE, {})
+    try:
+        return float(learning.get("factor", 1.0))
+    except Exception:
+        return 1.0
+
+
+def learning_days() -> int:
+    learning = _read_json(FORECAST_LEARNING_FILE, {})
+    return len(learning.get("samples", [])) if isinstance(learning.get("samples", []), list) else 0
+
+
+def _apply_factor(data: Dict[str, Any], factor: float) -> Dict[str, Any]:
+    out = dict(data)
+    out["learning_factor"] = round(factor, 4)
+    out["learning_days"] = learning_days()
+    out["watts_corrected"] = {k: round(float(v) * factor, 3) for k, v in data.get("watts", {}).items()}
+    out["watt_hours_period_corrected"] = {k: round(float(v) * factor, 3) for k, v in data.get("watt_hours_period", {}).items()}
+    out["watt_hours_day_corrected"] = {k: round(float(v) * factor, 3) for k, v in data.get("watt_hours_day", {}).items()}
+    return out
+
+
+def update_learning_from_state(state: Dict[str, Any]):
+    if not FORECAST_LEARNING_ENABLE:
+        return
+    today = _today_key()
+    actual = state.get("energy_today_kwh")
+    if actual is None:
+        return
+    cache = _read_json(FORECAST_CACHE_FILE, {})
+    day_wh = (cache.get("watt_hours_day") or {}).get(today)
+    if not day_wh:
+        return
+    forecast_kwh = float(day_wh) / 1000.0
+    actual_kwh = float(actual)
+    if forecast_kwh <= 0 or actual_kwh <= 0:
+        return
+
+    # Tagsüber nicht permanent lernen; wir speichern pro Tag nur den jeweils höchsten echten Tagesertrag.
+    learning = _read_json(FORECAST_LEARNING_FILE, {"samples": [], "factor": 1.0})
+    samples = learning.get("samples", []) if isinstance(learning.get("samples", []), list) else []
+    samples = [s for s in samples if s.get("date") != today]
+    ratio = max(0.5, min(1.5, actual_kwh / forecast_kwh))
+    samples.append({"date": today, "actual_kwh": round(actual_kwh, 3), "forecast_kwh": round(forecast_kwh, 3), "ratio": round(ratio, 4)})
+    samples = samples[-FORECAST_LEARNING_DAYS:]
+    factor = sum(float(s.get("ratio", 1.0)) for s in samples) / max(len(samples), 1)
+    _write_json(FORECAST_LEARNING_FILE, {"factor": round(factor, 4), "samples": samples, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds")})
 
 
 def get_forecast(force: bool = False) -> Dict[str, Any]:
     if not FORECAST_ENABLE:
-        return {}
-
-    cache = _read_cache()
-    cache_age = time.time() - float(cache.get("fetched_at", 0) or 0)
+        return {"enabled": False}
+    cache = _read_json(FORECAST_CACHE_FILE, {})
+    cache_age = time.time() - float(cache.get("cache_timestamp", 0) or 0)
     if cache and not force and cache_age < FORECAST_INTERVAL:
-        data = cache.get("data", {})
-        # Faktor auch zwischen API-Abfragen frisch halten.
-        factor = current_factor()
-        data["forecast_correction_factor"] = round(factor, 3)
-        return data
+        return _apply_factor(cache, get_learning_factor())
 
-    try:
-        req = urllib.request.Request(_api_url(), headers={"User-Agent": "sma-sbfspot-runtime/2.2"})
-        with urllib.request.urlopen(req, timeout=25) as res:
-            payload = json.loads(res.read().decode("utf-8"))
-        data = _clean_payload(payload)
-        _write_cache({"fetched_at": time.time(), "data": data})
-        return data
-    except Exception as e:
-        old = cache.get("data", {}) if cache else {}
-        if old:
-            old["forecast_last_error"] = str(e)
-            return old
-        return {"forecast_last_error": str(e)}
+    results = []
+    errors = []
+    for array in FORECAST_ARRAYS:
+        try:
+            results.append((array, _fetch_array(array)))
+        except Exception as e:
+            errors.append(f"{array.get('name','PV')}: {e}")
+    if results:
+        data = _aggregate(results)
+        data["cache_timestamp"] = time.time()
+        if errors:
+            data["errors"] = errors
+        _write_json(FORECAST_CACHE_FILE, data)
+        return _apply_factor(data, get_learning_factor())
+    if cache:
+        cache["errors"] = errors or ["Forecast.Solar Abruf fehlgeschlagen, Cache verwendet"]
+        return _apply_factor(cache, get_learning_factor())
+    return {"enabled": True, "errors": errors or ["Keine Forecast.Solar Daten verfügbar"], "watts": {}, "watt_hours_day": {}}
+
+
+def forecast_state_fields() -> Dict[str, Any]:
+    data = get_forecast(False)
+    if not data.get("enabled", True):
+        return {}
+    factor = float(data.get("learning_factor", 1.0))
+    watts = data.get("watts_corrected") or data.get("watts") or {}
+    today = _today_key()
+    day_wh = (data.get("watt_hours_day_corrected") or data.get("watt_hours_day") or {}).get(today)
+    now_w = _now_power_from_series(watts)
+    return {
+        "forecast_power_w": round(max(now_w, 0), 1),
+        "forecast_today_kwh": round(float(day_wh or 0) / 1000.0, 3),
+        "forecast_updated_at": data.get("updated_at"),
+        "forecast_learning_factor": round(factor, 4),
+        "forecast_learning_days": int(data.get("learning_days", 0) or 0),
+    }

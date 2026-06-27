@@ -1,57 +1,43 @@
 import os
 import subprocess
 from datetime import datetime
-from typing import Any, Dict
 
-from config import SBFSPOT_CFG, VERSION
-from forecast_solar import get_forecast
+from config import SBFSPOT_CFG
+from forecast_solar import forecast_state_fields, update_learning_from_state
 from mqtt_client import publish_discovery, publish_state
 from parser import parse_output
 from storage import init_db, read_state, save_sample, write_state
 
-VALID_DATA_KEYS = {
-    "power_w", "pac1_w", "pac2_w", "pac3_w",
-    "energy_today_kwh", "energy_total_kwh", "pdc1_w", "pdc2_w", "pdc_total_w",
-    "dc_voltage_1_v", "dc_voltage_2_v", "dc_current_1_a", "dc_current_2_a",
-    "ac_voltage_1_v", "ac_current_1_a", "frequency_hz", "temperature_c",
-    "operation_time_h", "feed_in_time_h", "efficiency_percent", "serial",
-    "forecast_today_kwh", "forecast_tomorrow_kwh", "forecast_remaining_today_kwh",
-    "forecast_power_now_w", "forecast_power_next_hour_w", "forecast_updated",
-    "forecast_today_raw_kwh", "forecast_tomorrow_raw_kwh", "forecast_power_now_raw_w",
-    "forecast_correction_factor", "forecast_accuracy_days",
-    "forecast_points", "forecast_points_raw", "forecast_rate_limit", "forecast_last_error",
-}
 
-
-def now_iso() -> str:
+def now_iso():
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def _merge_with_previous(previous: Dict[str, Any], fresh: Dict[str, Any]) -> Dict[str, Any]:
-    merged = dict(previous or {})
-    for key in VALID_DATA_KEYS:
-        value = fresh.get(key)
-        if value is not None and str(value).lower() not in ("unknown", "unavailable", "nan", "none", "null"):
-            merged[key] = value
-    return merged
+def keep_last_valid_values(new_state):
+    old = read_state()
+    if old.get("status") not in ("online", "error", "waiting"):
+        old = {}
+    keep_keys = [
+        "power_w", "pac1_w", "pac2_w", "pac3_w", "energy_today_kwh", "energy_total_kwh",
+        "temperature_c", "dc_voltage_1_v", "dc_current_1_a", "pdc1_w", "dc_voltage_2_v",
+        "dc_current_2_a", "pdc2_w", "pdc_total_w", "ac_voltage_1_v", "ac_current_1_a",
+        "frequency_hz", "efficiency_percent", "serial"
+    ]
+    for key in keep_keys:
+        if new_state.get(key) is None and old.get(key) is not None:
+            new_state[key] = old.get(key)
+    return new_state
 
 
-def main() -> None:
+def main():
     init_db()
     publish_discovery()
-    previous = read_state()
 
     if not os.path.exists(SBFSPOT_CFG):
-        state = _merge_with_previous(previous, {})
-        state.update({
-            "status": "config_missing",
-            "timestamp": now_iso(),
-            "version": VERSION,
-            "last_error": f"{SBFSPOT_CFG} fehlt",
-        })
+        state = {"status": "config_missing", "availability": "online", "timestamp": now_iso(), "last_error": f"{SBFSPOT_CFG} fehlt"}
+        state.update(forecast_state_fields())
         write_state(state)
         publish_state(state)
-        print("collector_status=config_missing")
         return
 
     try:
@@ -65,43 +51,25 @@ def main() -> None:
         )
         output = proc.stdout or ""
         parsed = parse_output(output)
-        ok = proc.returncode == 0 and bool(parsed.get("raw_ok"))
-
-        if ok:
-            state = _merge_with_previous(previous, parsed)
-            state.update({
-                "status": "online",
-                "timestamp": now_iso(),
-                "version": VERSION,
-                "last_error": "",
-            })
-        else:
-            # Bei Fehlern letzte gültige Zahlen behalten, Status aber sichtbar auf error setzen.
-            state = _merge_with_previous(previous, parsed)
-            state.update({
-                "status": "error",
-                "timestamp": now_iso(),
-                "version": VERSION,
-                "last_error": output[-4000:],
-            })
-    except Exception as e:
-        state = _merge_with_previous(previous, {})
-        state.update({
-            "status": "error",
+        ok = proc.returncode == 0 and parsed.get("raw_ok")
+        state = {
+            "status": "online" if ok else "error",
+            "availability": "online",
             "timestamp": now_iso(),
-            "version": VERSION,
-            "last_error": str(e),
-        })
+            **{k: v for k, v in parsed.items() if k != "raw_ok"},
+            "last_error": "" if ok else output[-4000:],
+        }
+    except Exception as e:
+        state = {"status": "error", "availability": "online", "timestamp": now_iso(), "last_error": str(e)}
 
-    forecast = get_forecast()
-    if forecast:
-        state.update(forecast)
-
+    state = keep_last_valid_values(state)
+    state.update(forecast_state_fields())
     write_state(state)
     publish_state(state)
 
     if state.get("status") == "online":
         save_sample(state)
+        update_learning_from_state(state)
 
     print(f"collector_status={state.get('status')}")
     if state.get("last_error"):

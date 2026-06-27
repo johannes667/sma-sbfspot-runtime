@@ -1,18 +1,10 @@
 #!/usr/bin/env bash
-set -e
-
-STATE_FILE="${DATA_DIR:-/data}/state.json"
-test -f "$STATE_FILE"
-
 python3 - <<'PY'
-import json
-import os
-import sys
-
-path = os.path.join(os.environ.get("DATA_DIR", "/data"), "state.json")
-with open(path, encoding="utf-8") as f:
-    state = json.load(f)
-
-if state.get("status") not in ("online", "error", "waiting", "config_missing"):
+import json, sys, urllib.request
+try:
+    with urllib.request.urlopen('http://127.0.0.1:8088/api/status', timeout=5) as r:
+        data=json.loads(r.read().decode())
+    sys.exit(0 if data.get('status') is not None else 1)
+except Exception:
     sys.exit(1)
 PY
