@@ -1,1 +1,125 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SMA Runtime 2.1.1</title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>:root{color-scheme:dark}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#101214;color:#eee;margin:0;padding:20px}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}h1{font-size:24px;margin:0}.badge{padding:6px 12px;border-radius:999px;background:#444;font-weight:700}.online{background:#136b35}.error{background:#8a2222}.waiting{background:#705f00}.config_missing{background:#8a5a20}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.card{background:#1b1f23;border:1px solid #30363d;border-radius:16px;padding:16px;box-shadow:0 4px 18px #0006}.label{font-size:13px;color:#aab}.value{font-size:25px;font-weight:800;margin-top:6px;line-height:1.1}.chartbox{margin-top:18px;background:#1b1f23;border:1px solid #30363d;border-radius:16px;padding:16px}.small{font-size:13px;color:#9aa;margin-top:14px;word-break:break-word}canvas{max-height:280px}</style></head><body><div class="header"><h1>☀ SMA Live Werte</h1><div id="status" class="badge waiting">waiting</div></div><div class="grid"><div class="card"><div class="label">Leistung</div><div id="power_w" class="value">–</div></div><div class="card"><div class="label">Heute</div><div id="energy_today_kwh" class="value">–</div></div><div class="card"><div class="label">Gesamt</div><div id="energy_total_kwh" class="value">–</div></div><div class="card"><div class="label">Temperatur</div><div id="temperature_c" class="value">–</div></div><div class="card"><div class="label">MPPT1</div><div id="mppt1" class="value">–</div></div><div class="card"><div class="label">MPPT2</div><div id="mppt2" class="value">–</div></div><div class="card"><div class="label">AC L1</div><div id="ac1" class="value">–</div></div><div class="card"><div class="label">Frequenz</div><div id="frequency_hz" class="value">–</div></div><div class="card"><div class="label">Wirkungsgrad</div><div id="efficiency_percent" class="value">–</div></div></div><div class="chartbox"><canvas id="chart"></canvas></div><div class="small" id="timestamp"></div><div class="small" id="error"></div><script>const units={power_w:" W",energy_today_kwh:" kWh",energy_total_kwh:" kWh",temperature_c:" °C",frequency_hz:" Hz",efficiency_percent:" %"};function fmt(v,u=""){return(v===null||v===undefined)?"–":String(v).replace(".",",")+u}let chart;async function loadLive(){const r=await fetch('/api/live?_='+Date.now());const s=await r.json();const st=document.getElementById('status');st.textContent=s.status||'unknown';st.className='badge '+(s.status||'waiting');for(const k of["power_w","energy_today_kwh","energy_total_kwh","temperature_c","frequency_hz","efficiency_percent"]){document.getElementById(k).textContent=fmt(s[k],units[k])}document.getElementById('mppt1').textContent=`${fmt(s.pdc1_w," W")} / ${fmt(s.dc_voltage_1_v," V")} / ${fmt(s.dc_current_1_a," A")}`;document.getElementById('mppt2').textContent=`${fmt(s.pdc2_w," W")} / ${fmt(s.dc_voltage_2_v," V")} / ${fmt(s.dc_current_2_a," A")}`;document.getElementById('ac1').textContent=`${fmt(s.pac1_w," W")} / ${fmt(s.ac_voltage_1_v," V")} / ${fmt(s.ac_current_1_a," A")}`;document.getElementById('timestamp').textContent='Letzte Aktualisierung: '+(s.timestamp||'–');document.getElementById('error').textContent=s.last_error?'Fehler: '+s.last_error:''}async function loadHistory(){const r=await fetch('/api/history?_='+Date.now());const rows=await r.json();const labels=rows.map(x=>(x.ts||'').substring(11,16));const data=rows.map(x=>x.power_w);const ctx=document.getElementById('chart');if(!chart){chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Leistung W',data,tension:.25}]},options:{responsive:true,scales:{y:{beginAtZero:true}}}})}else{chart.data.labels=labels;chart.data.datasets[0].data=data;chart.update()}}async function loop(){try{await loadLive();await loadHistory()}catch(e){console.log(e)}}loop();setInterval(loop,10000);</script></body></html>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SMA Runtime 2.2</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #111827; color: #f9fafb; }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 32px; }
+    .status { margin-bottom: 20px; color: #d1d5db; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+    .card { background: #1f2937; border: 1px solid #374151; border-radius: 16px; padding: 18px; box-shadow: 0 10px 24px rgba(0,0,0,.25); }
+    .label { color: #9ca3af; font-size: 14px; margin-bottom: 8px; }
+    .value { font-size: 28px; font-weight: 750; }
+    .wide { margin-top: 14px; }
+    canvas { width: 100%; height: 280px; display: block; }
+    .legend { display: flex; gap: 16px; flex-wrap: wrap; color: #d1d5db; font-size: 13px; margin-top: 10px; }
+    .small { font-size: 13px; color: #9ca3af; margin-top: 18px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>☀ SMA Live Werte</h1>
+  <div class="status" id="status">waiting</div>
+  <section class="grid">
+    <div class="card"><div class="label">PV Ist-Leistung</div><div class="value" id="power_w">–</div></div>
+    <div class="card"><div class="label">Forecast jetzt korrigiert</div><div class="value" id="forecast_power_now_w">–</div></div>
+    <div class="card"><div class="label">Forecast heute</div><div class="value" id="forecast_today_kwh">–</div></div>
+    <div class="card"><div class="label">Rest heute</div><div class="value" id="forecast_remaining_today_kwh">–</div></div>
+    <div class="card"><div class="label">Forecast morgen</div><div class="value" id="forecast_tomorrow_kwh">–</div></div>
+    <div class="card"><div class="label">Korrekturfaktor</div><div class="value" id="forecast_correction_factor">–</div></div>
+    <div class="card"><div class="label">Heute real</div><div class="value" id="energy_today_kwh">–</div></div>
+    <div class="card"><div class="label">Gesamt</div><div class="value" id="energy_total_kwh">–</div></div>
+    <div class="card"><div class="label">Temperatur</div><div class="value" id="temperature_c">–</div></div>
+    <div class="card"><div class="label">MPPT1</div><div class="value" id="pdc1_w">–</div></div>
+    <div class="card"><div class="label">MPPT2</div><div class="value" id="pdc2_w">–</div></div>
+    <div class="card"><div class="label">DC Gesamt</div><div class="value" id="pdc_total_w">–</div></div>
+    <div class="card"><div class="label">Wirkungsgrad</div><div class="value" id="efficiency_percent">–</div></div>
+  </section>
+
+  <section class="card wide">
+    <div class="label">Verlauf: PV Ist-Leistung + Forecast.Solar Schätzung mit Lernfaktor</div>
+    <canvas id="chart" width="1000" height="280"></canvas>
+    <div class="legend"><span>Real: PV Ist-Leistung</span><span>Forecast: Forecast.Solar</span><span id="forecast_updated"></span></div>
+  </section>
+
+  <div class="small" id="meta"></div>
+</main>
+<script>
+const units = {
+  power_w: " W", pac1_w: " W", pdc1_w: " W", pdc2_w: " W", pdc_total_w: " W",
+  energy_today_kwh: " kWh", energy_total_kwh: " kWh", temperature_c: " °C", frequency_hz: " Hz", efficiency_percent: " %",
+  forecast_power_now_w: " W", forecast_power_next_hour_w: " W", forecast_today_kwh: " kWh", forecast_remaining_today_kwh: " kWh", forecast_tomorrow_kwh: " kWh", forecast_correction_factor: "", forecast_accuracy_days: " d", forecast_today_raw_kwh: " kWh", forecast_power_now_raw_w: " W"
+};
+function setValue(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const v = state[id];
+  el.textContent = (v === undefined || v === null || v === "") ? "–" : `${v}${units[id] || ""}`;
+}
+function drawChart(history, forecastPoints) {
+  const canvas = document.getElementById("chart");
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(0, 0, w, h);
+  const pad = {l: 48, r: 18, t: 18, b: 34};
+  const now = new Date();
+  const start = new Date(now); start.setHours(0,0,0,0);
+  const end = new Date(now); end.setHours(23,59,59,999);
+  const real = (history || []).filter(p => p.ts && p.power_w !== null && p.power_w !== undefined)
+    .map(p => ({t: new Date(p.ts).getTime(), y: Number(p.power_w)}))
+    .filter(p => p.t >= start.getTime() && p.t <= end.getTime() && Number.isFinite(p.y));
+  const fc = (forecastPoints || []).map(p => ({t: new Date(p.ts).getTime(), y: Number(p.w)}))
+    .filter(p => p.t >= start.getTime() && p.t <= end.getTime() && Number.isFinite(p.y));
+  const maxY = Math.max(1000, ...real.map(p => p.y), ...fc.map(p => p.y));
+  const x = t => pad.l + (t - start.getTime()) / (end.getTime() - start.getTime()) * (w - pad.l - pad.r);
+  const y = v => h - pad.b - (v / maxY) * (h - pad.t - pad.b);
+
+  ctx.strokeStyle = "#374151"; ctx.lineWidth = 1; ctx.fillStyle = "#9ca3af"; ctx.font = "12px system-ui";
+  for (let hour=0; hour<=24; hour+=4) {
+    const t = new Date(start); t.setHours(hour,0,0,0);
+    const xx = x(t.getTime());
+    ctx.beginPath(); ctx.moveTo(xx, pad.t); ctx.lineTo(xx, h-pad.b); ctx.stroke();
+    if (hour < 24) ctx.fillText(`${hour}:00`, xx-14, h-10);
+  }
+  for (let i=0; i<=4; i++) {
+    const val = maxY * i / 4;
+    const yy = y(val);
+    ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(w-pad.r, yy); ctx.stroke();
+    ctx.fillText(`${Math.round(val)} W`, 4, yy+4);
+  }
+  function line(points, color, width, dash) {
+    if (points.length < 2) return;
+    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash || []); ctx.beginPath();
+    points.forEach((p, i) => i ? ctx.lineTo(x(p.t), y(p.y)) : ctx.moveTo(x(p.t), y(p.y)));
+    ctx.stroke(); ctx.restore();
+  }
+  line(fc, "#facc15", 2, [6, 5]);
+  line(real, "#22c55e", 2.5, []);
+}
+async function load() {
+  try {
+    const [stateRes, histRes] = await Promise.all([
+      fetch("/api/state", {cache: "no-store"}),
+      fetch("/api/history", {cache: "no-store"})
+    ]);
+    const state = await stateRes.json();
+    const hist = await histRes.json();
+    document.getElementById("status").textContent = `${state.status || "waiting"} · ${state.timestamp || "–"} · Version ${state.version || "–"}`;
+    Object.keys(units).forEach(id => setValue(id, state));
+    document.getElementById("forecast_updated").textContent = state.forecast_updated ? `Forecast aktualisiert: ${state.forecast_updated} · Faktor: ${state.forecast_correction_factor || "1.0"} · Lerntage: ${state.forecast_accuracy_days || 0}` : "";
+    document.getElementById("meta").textContent = [state.last_error ? `Letzter SBFspot Fehler:\n${state.last_error}` : "", state.forecast_last_error ? `Forecast Fehler:\n${state.forecast_last_error}` : ""].filter(Boolean).join("\n\n");
+    drawChart(hist, state.forecast_points || []);
+  } catch(e) {
+    document.getElementById("status").textContent = "web_error";
+  }
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
