@@ -6,7 +6,7 @@
   <title>SMA Runtime 2.2</title>
   <style>
     body{margin:0;background:#111827;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:22px}
-    h1{font-size:24px;margin:0 0 14px}.status{color:#9ca3af;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{background:#1f2937;border:1px solid #374151;border-radius:18px;padding:16px}.label{color:#9ca3af;font-size:15px}.value{font-size:34px;font-weight:800;margin-top:8px}.wide{grid-column:1/-1}canvas{width:100%;height:330px;background:#0f172a;border-radius:8px}.small{color:#cbd5e1;font-size:14px;line-height:1.5}@media(max-width:700px){.grid{grid-template-columns:1fr}.value{font-size:30px}}
+    h1{font-size:24px;margin:0 0 14px}.status{color:#9ca3af;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{background:#1f2937;border:1px solid #374151;border-radius:18px;padding:16px}.label{color:#9ca3af;font-size:15px}.value{font-size:34px;font-weight:800;margin-top:8px}.wide{grid-column:1/-1}canvas{width:100%;height:330px;background:#0f172a;border-radius:8px}.small{color:#cbd5e1;font-size:14px;line-height:1.5}.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}.dot{display:inline-block;width:18px;height:4px;border-radius:4px;margin-right:6px;vertical-align:middle}.green{background:#22c55e}.yellow{background:#facc15}@media(max-width:700px){.grid{grid-template-columns:1fr}.value{font-size:30px}}
   </style>
 </head>
 <body>
@@ -14,7 +14,7 @@
 <div id="status" class="status">waiting</div>
 <div class="grid">
   <div class="card"><div class="label">Leistung</div><div class="value" id="power">–</div></div>
-  <div class="card"><div class="label">Forecast</div><div class="value" id="forecast">–</div></div>
+  <div class="card"><div class="label">Forecast jetzt</div><div class="value" id="forecast">–</div></div>
   <div class="card"><div class="label">Heute</div><div class="value" id="today">–</div></div>
   <div class="card"><div class="label">Forecast Heute</div><div class="value" id="ftoday">–</div></div>
   <div class="card"><div class="label">Temperatur</div><div class="value" id="temp">–</div></div>
@@ -25,14 +25,58 @@
   <div class="card wide">
     <div class="label">Verlauf: PV Ist-Leistung + Forecast.Solar mit Lernfaktor</div><br>
     <canvas id="chart" width="900" height="360"></canvas>
+    <div class="legend"><span><span class="dot green"></span>Real: PV Ist-Leistung</span><span><span class="dot yellow"></span>Forecast: vollständige Forecast.Solar-Kurve</span></div>
     <p class="small" id="forecastInfo">–</p>
   </div>
 </div>
 <script>
 function fmt(v,u,d=0){ if(v===undefined||v===null||v==='') return '–'; let n=Number(v); if(Number.isNaN(n)) return v; return n.toFixed(d)+' '+u; }
-function tsHour(ts){ const d=new Date(ts); return d.getHours()+d.getMinutes()/60; }
-function draw(hist){ const c=document.getElementById('chart'),ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); const pad=48,w=c.width-pad-14,h=c.height-pad-22; const pts=hist.filter(x=>x.ts).map(x=>({x:tsHour(x.ts),y:Number(x.power_w||0),f:Number(x.forecast_power_w||0)})); const max=Math.max(1000,...pts.map(p=>p.y),...pts.map(p=>p.f)); ctx.strokeStyle='#334155'; ctx.lineWidth=1; ctx.font='12px sans-serif'; ctx.fillStyle='#94a3b8'; for(let i=0;i<=4;i++){let y=10+h-i*h/4;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(pad+w,y);ctx.stroke();ctx.fillText(Math.round(max*i/4)+' W',4,y+4)} for(let hr=0;hr<=24;hr+=4){let x=pad+w*hr/24;ctx.beginPath();ctx.moveTo(x,10);ctx.lineTo(x,10+h);ctx.stroke();ctx.fillText(hr+':00',x-12,10+h+24)} function line(key,color,dash){ctx.strokeStyle=color;ctx.lineWidth=3;ctx.setLineDash(dash||[]);ctx.beginPath();let first=true;for(const p of pts){let x=pad+w*p.x/24,y=10+h-(p[key]/max)*h;if(first){ctx.moveTo(x,y);first=false}else ctx.lineTo(x,y)}ctx.stroke();ctx.setLineDash([])} line('f','#facc15',[8,6]); line('y','#22c55e',[]); }
-async function load(){ const s=await fetch('/api/state').then(r=>r.json()); document.getElementById('status').textContent=(s.status||'waiting')+' · '+(s.timestamp||''); document.getElementById('power').textContent=fmt(s.power_w,'W'); document.getElementById('forecast').textContent=fmt(s.forecast_power_w,'W'); document.getElementById('today').textContent=fmt(s.energy_today_kwh,'kWh',2); document.getElementById('ftoday').textContent=fmt(s.forecast_today_kwh,'kWh',2); document.getElementById('temp').textContent=fmt(s.temperature_c,'°C',1); document.getElementById('dc').textContent=fmt(s.pdc_total_w,'W'); document.getElementById('mppt1').textContent=fmt(s.pdc1_w,'W'); document.getElementById('mppt2').textContent=fmt(s.pdc2_w,'W'); document.getElementById('eff').textContent=fmt(s.efficiency_percent,'%',2); document.getElementById('forecastInfo').textContent='Forecast aktualisiert: '+(s.forecast_updated_at||'–')+' · Faktor: '+(s.forecast_learning_factor||1)+' · Lerntage: '+(s.forecast_learning_days||0); const h=await fetch('/api/history').then(r=>r.json()); draw(h); }
+function parseLocalTs(ts){
+  if(!ts) return null;
+  if(ts.includes('T')) return new Date(ts);
+  const m=String(ts).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if(m) return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),Number(m[4]),Number(m[5]),Number(m[6]));
+  return new Date(ts);
+}
+function tsHour(ts){ const d=parseLocalTs(ts); return d ? d.getHours()+d.getMinutes()/60+d.getSeconds()/3600 : 0; }
+function todayIso(){ const d=new Date(); const m=String(d.getMonth()+1).padStart(2,'0'); const day=String(d.getDate()).padStart(2,'0'); return d.getFullYear()+'-'+m+'-'+day; }
+function forecastPoints(forecast){
+  const watts=forecast.watts_corrected || forecast.watts || {};
+  const day=todayIso();
+  return Object.entries(watts).filter(([ts])=>String(ts).startsWith(day)).map(([ts,v])=>({x:tsHour(ts),f:Number(v||0)}));
+}
+function draw(hist,forecast){
+  const c=document.getElementById('chart'),ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);
+  const pad=48,w=c.width-pad-14,h=c.height-pad-22;
+  const real=hist.filter(x=>x.ts).map(x=>({x:tsHour(x.ts),y:Number(x.power_w||0)}));
+  const fc=forecastPoints(forecast||{});
+  const max=Math.max(1000,...real.map(p=>p.y),...fc.map(p=>p.f));
+  ctx.strokeStyle='#334155'; ctx.lineWidth=1; ctx.font='12px sans-serif'; ctx.fillStyle='#94a3b8';
+  for(let i=0;i<=4;i++){let y=10+h-i*h/4;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(pad+w,y);ctx.stroke();ctx.fillText(Math.round(max*i/4)+' W',4,y+4)}
+  for(let hr=0;hr<=24;hr+=4){let x=pad+w*hr/24;ctx.beginPath();ctx.moveTo(x,10);ctx.lineTo(x,10+h);ctx.stroke();ctx.fillText(hr+':00',x-12,10+h+24)}
+  function line(arr,key,color,dash){ctx.strokeStyle=color;ctx.lineWidth=3;ctx.setLineDash(dash||[]);ctx.beginPath();let first=true;for(const p of arr){let x=pad+w*p.x/24,y=10+h-(p[key]/max)*h;if(first){ctx.moveTo(x,y);first=false}else ctx.lineTo(x,y)}ctx.stroke();ctx.setLineDash([])}
+  line(fc,'f','#facc15',[8,6]);
+  line(real,'y','#22c55e',[]);
+}
+async function load(){
+  const s=await fetch('/api/state').then(r=>r.json());
+  const h=await fetch('/api/history').then(r=>r.json());
+  const f=await fetch('/api/forecast').then(r=>r.json()).catch(()=>({}));
+  document.getElementById('status').textContent=(s.status||'waiting')+' · '+(s.timestamp||'');
+  document.getElementById('power').textContent=fmt(s.power_w,'W');
+  document.getElementById('forecast').textContent=fmt(s.forecast_power_w,'W');
+  document.getElementById('today').textContent=fmt(s.energy_today_kwh,'kWh',2);
+  document.getElementById('ftoday').textContent=fmt(s.forecast_today_kwh,'kWh',2);
+  document.getElementById('temp').textContent=fmt(s.temperature_c,'°C',1);
+  document.getElementById('dc').textContent=fmt(s.pdc_total_w,'W');
+  document.getElementById('mppt1').textContent=fmt(s.pdc1_w,'W');
+  document.getElementById('mppt2').textContent=fmt(s.pdc2_w,'W');
+  document.getElementById('eff').textContent=fmt(s.efficiency_percent,'%',2);
+  const arrays=(f.arrays||[]).map(a=>`${a.name}: ${a.peak_power} kWp, ${a.declination}°, ${a.azimuth}°`).join(' · ');
+  const errors=(f.errors||[]).length ? ' · Fehler: '+f.errors.join(' | ') : '';
+  document.getElementById('forecastInfo').textContent='Forecast aktualisiert: '+(s.forecast_updated_at||f.updated_at||'–')+' · Faktor: '+(s.forecast_learning_factor||f.learning_factor||1)+' · Lerntage: '+(s.forecast_learning_days||f.learning_days||0)+(arrays?' · '+arrays:'')+errors;
+  draw(h,f);
+}
 load(); setInterval(load,30000);
 </script>
 </body>
