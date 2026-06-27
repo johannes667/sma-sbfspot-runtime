@@ -123,3 +123,18 @@ Weboberfläche:
 ```text
 http://UNRAID-IP:8088
 ```
+
+## Fix in dieser Copy-Paste-Version
+
+Diese Version zeichnet die gelbe Forecast-Kurve nicht mehr aus den gespeicherten History-Samples, sondern direkt aus `/api/forecast`. Dadurch verschwindet die falsche 0-W-Linie mit senkrechtem Sprung.
+
+Zusätzlich werden Forecast.Solar-Zeitstempel ohne Zeitzone explizit als `Europe/Berlin` behandelt.
+
+Nach dem Update einmal Cache löschen:
+
+```bash
+rm -f /mnt/user/appdata/sma-sbfspot/data/forecast_solar.json
+rm -f /mnt/user/appdata/sma-sbfspot/data/forecast_learning.json
+```
+
+Dann Container neu bauen/starten.
