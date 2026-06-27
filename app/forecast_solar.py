@@ -1,10 +1,11 @@
 import json
 import os
 import time
-from datetime import datetime, date, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from config import (
     FORECAST_API_KEY,
@@ -18,6 +19,8 @@ from config import (
     FORECAST_LEARNING_FILE,
     FORECAST_LONGITUDE,
 )
+
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 
 def _read_json(path: str, default: Any):
@@ -37,20 +40,26 @@ def _write_json(path: str, data: Any):
 
 
 def _ts_to_epoch(ts: str) -> float:
-    # Forecast.Solar liefert meist "YYYY-mm-dd HH:MM:SS" lokal.
+    """Forecast.Solar timestamps are usually local time without timezone."""
     try:
-        if "T" in ts:
-            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-        return datetime.fromisoformat(ts.replace(" ", "T")).timestamp()
+        value = str(ts).strip().replace(" ", "T").replace("Z", "+00:00")
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=LOCAL_TZ)
+        return dt.timestamp()
     except Exception:
-        return 0
+        return 0.0
+
+
+def _today_key() -> str:
+    return datetime.now(LOCAL_TZ).date().isoformat()
 
 
 def _now_power_from_series(watts: Dict[str, float]) -> float:
     if not watts:
         return 0.0
     now = time.time()
-    points = sorted((_ts_to_epoch(k), float(v)) for k, v in watts.items())
+    points = sorted((_ts_to_epoch(k), float(v or 0)) for k, v in watts.items())
     points = [p for p in points if p[0] > 0]
     if not points:
         return 0.0
@@ -65,10 +74,6 @@ def _now_power_from_series(watts: Dict[str, float]) -> float:
             ratio = (now - t1) / (t2 - t1)
             return v1 + (v2 - v1) * ratio
     return 0.0
-
-
-def _today_key() -> str:
-    return datetime.now().astimezone().date().isoformat()
 
 
 def _fetch_array(array: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,13 +113,15 @@ def _aggregate(results: List[Tuple[Dict[str, Any], Dict[str, Any]]]) -> Dict[str
             "peak_power": float(array.get("peak_power", array.get("kwp", 0))),
             "declination": float(array.get("declination", 35)),
             "azimuth": float(array.get("azimuth", 0)),
+            "damping": float(array.get("damping", 0) or 0),
         })
 
     return {
-        "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "enabled": True,
+        "updated_at": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
         "arrays": arrays,
-        "watts": dict(sorted(watts.items())),
-        "watt_hours_period": dict(sorted(watt_hours_period.items())),
+        "watts": dict(sorted(watts.items(), key=lambda kv: _ts_to_epoch(kv[0]))),
+        "watt_hours_period": dict(sorted(watt_hours_period.items(), key=lambda kv: _ts_to_epoch(kv[0]))),
         "watt_hours_day": dict(sorted(watt_hours_day.items())),
     }
 
@@ -129,16 +136,17 @@ def get_learning_factor() -> float:
 
 def learning_days() -> int:
     learning = _read_json(FORECAST_LEARNING_FILE, {})
-    return len(learning.get("samples", [])) if isinstance(learning.get("samples", []), list) else 0
+    samples = learning.get("samples", [])
+    return len(samples) if isinstance(samples, list) else 0
 
 
 def _apply_factor(data: Dict[str, Any], factor: float) -> Dict[str, Any]:
     out = dict(data)
     out["learning_factor"] = round(factor, 4)
     out["learning_days"] = learning_days()
-    out["watts_corrected"] = {k: round(float(v) * factor, 3) for k, v in data.get("watts", {}).items()}
-    out["watt_hours_period_corrected"] = {k: round(float(v) * factor, 3) for k, v in data.get("watt_hours_period", {}).items()}
-    out["watt_hours_day_corrected"] = {k: round(float(v) * factor, 3) for k, v in data.get("watt_hours_day", {}).items()}
+    out["watts_corrected"] = {k: round(float(v or 0) * factor, 3) for k, v in data.get("watts", {}).items()}
+    out["watt_hours_period_corrected"] = {k: round(float(v or 0) * factor, 3) for k, v in data.get("watt_hours_period", {}).items()}
+    out["watt_hours_day_corrected"] = {k: round(float(v or 0) * factor, 3) for k, v in data.get("watt_hours_day", {}).items()}
     return out
 
 
@@ -158,7 +166,6 @@ def update_learning_from_state(state: Dict[str, Any]):
     if forecast_kwh <= 0 or actual_kwh <= 0:
         return
 
-    # Tagsüber nicht permanent lernen; wir speichern pro Tag nur den jeweils höchsten echten Tagesertrag.
     learning = _read_json(FORECAST_LEARNING_FILE, {"samples": [], "factor": 1.0})
     samples = learning.get("samples", []) if isinstance(learning.get("samples", []), list) else []
     samples = [s for s in samples if s.get("date") != today]
@@ -166,7 +173,7 @@ def update_learning_from_state(state: Dict[str, Any]):
     samples.append({"date": today, "actual_kwh": round(actual_kwh, 3), "forecast_kwh": round(forecast_kwh, 3), "ratio": round(ratio, 4)})
     samples = samples[-FORECAST_LEARNING_DAYS:]
     factor = sum(float(s.get("ratio", 1.0)) for s in samples) / max(len(samples), 1)
-    _write_json(FORECAST_LEARNING_FILE, {"factor": round(factor, 4), "samples": samples, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds")})
+    _write_json(FORECAST_LEARNING_FILE, {"factor": round(factor, 4), "samples": samples, "updated_at": datetime.now(LOCAL_TZ).isoformat(timespec="seconds")})
 
 
 def get_forecast(force: bool = False) -> Dict[str, Any]:
