@@ -1,87 +1,110 @@
 # SMA SBFspot Runtime 2.2
 
-SMA Bluetooth PV-Auslesung für Unraid/Docker mit SBFspot, Web-Dashboard, MQTT, Home Assistant Discovery, SQLite-Historie und Forecast.Solar-Prognose mit automatischem Lernfaktor.
+SMA Bluetooth PV-Auslesung für Docker/Unraid mit SBFspot, Web-Dashboard, MQTT, Home Assistant Discovery, SQLite-Historie und Forecast.Solar-Prognose.
 
-## Neu in 2.2
+## Wichtig ab Version 2.2
 
-- PVOutput/PV-Output-Zusatzsensor entfernt
-- `power_w` ist der echte Live-Istwert aus SBFspot
-- Forecast.Solar integriert:
-  - `forecast_power_now_w`
-  - `forecast_power_next_hour_w`
-  - `forecast_today_kwh`
-  - `forecast_remaining_today_kwh`
-  - `forecast_tomorrow_kwh`
-- Lernender Korrekturfaktor:
-  - vergleicht abgeschlossene Tage: echter Tagesertrag vs. Forecast.Solar-Rohprognose
-  - nutzt standardmäßig die letzten 14 Tage
-  - begrenzt den Faktor sicher auf 0.6 bis 1.4
-  - speichert Daten in `/data/forecast_learning.json`
-- Rohwerte bleiben zusätzlich erhalten:
-  - `forecast_today_raw_kwh`
-  - `forecast_tomorrow_raw_kwh`
-  - `forecast_power_now_raw_w`
-- Weboberfläche mit Verlaufskurve: Ist-Leistung + korrigierte Forecast.Solar-Kurve
-- MQTT-Availability getrennt von Status: `sma/sbfspot/availability`
-- SBFspot-Fehler setzen nur den Status auf `error`, die letzten gültigen Zahlen bleiben erhalten
-- Keine Veröffentlichung von `unknown`, `unavailable`, `None` oder `NaN` als Sensorwert
+Die Konfiguration ist getrennt:
 
-## Forecast.Solar konfigurieren
+```text
+/config/SBFspot.cfg     # nur SBFspot-Konfiguration
+/config/config.yaml     # Docker/App-Konfiguration inkl. MQTT und Forecast.Solar
+```
 
-In `docker-compose.yml`:
+Forecast.Solar gehört **nicht** in `SBFspot.cfg`.
+
+## Beispiel `config.yaml`
 
 ```yaml
-FORECAST_ENABLE: "true"
-FORECAST_LATITUDE: "48.2173"
-FORECAST_LONGITUDE: "9.8268"
-FORECAST_DECLINATION: "35"   # Dachneigung in Grad
-FORECAST_AZIMUTH: "0"        # Forecast.Solar: 0=Süd, -90=Ost, 90=West
-FORECAST_KWP: "3.6"          # Anlagenleistung in kWp
-FORECAST_INTERVAL: "3600"    # API nur stündlich abrufen
-FORECAST_API_KEY: ""         # optional
-FORECAST_DAMPING: "0"        # optional
-FORECAST_INVERTER_KW: ""     # optional, z.B. "3.0"
-FORECAST_LEARNING_ENABLE: "true"
-FORECAST_LEARNING_DAYS: "14"
+runtime:
+  interval: 300
+  web_port: 8088
+
+mqtt:
+  enabled: true
+  host: 192.168.2.115
+  port: 1883
+  username: sbfspot
+  password: ""
+  base_topic: sma/sbfspot
+  retain: true
+
+homeassistant:
+  discovery: true
+  discovery_prefix: homeassistant
+  device_name: SMA Wechselrichter Amann
+  device_id: sma_sbfspot_amann
+
+forecast_solar:
+  enabled: true
+  latitude: 48.23
+  longitude: 9.88
+  interval: 3600
+  api_key: ""
+
+  arrays:
+    - name: West
+      peak_power: 1.90
+      declination: 44
+      azimuth: 265
+      damping: 0
+
+    - name: Sued
+      peak_power: 1.71
+      declination: 44
+      azimuth: 185
+      damping: 0
+
+  learning:
+    enabled: true
+    days: 14
 ```
 
-Wichtig: Für diese Forecast.Solar-API gilt hier: `0 = Süd`, `-90 = Ost`, `90 = West`.
+## Forecast.Solar Werte
 
-## MQTT Topics
+- `latitude` / `longitude`: Standort der Anlage
+- `peak_power`: Leistung der jeweiligen Dachfläche in kWp
+- `declination`: Dachneigung in Grad, 0 = flach, 90 = senkrecht
+- `azimuth`: Ausrichtung, 0 = Nord, 90 = Ost, 180 = Süd, 270 = West
+- `damping`: optionale Dämpfung der Forecast.Solar-Kurve
+
+Für die Anlage Amann ist die Startaufteilung:
+
+- West: 1,90 kWp, 44°, Azimut 265°
+- Süd: 1,71 kWp, 44°, Azimut 185°
+
+## Lernfaktor
+
+Wenn `learning.enabled: true` aktiv ist, vergleicht der Docker den echten Tagesertrag aus SBFspot mit der Forecast.Solar-Tagesprognose. Aus den letzten `days` Tagen wird ein Korrekturfaktor berechnet und auf die Kurve angewendet.
+
+Dateien:
 
 ```text
-sma/sbfspot/availability
-sma/sbfspot/status
-sma/sbfspot/power_w
-sma/sbfspot/forecast_power_now_w
-sma/sbfspot/forecast_power_next_hour_w
-sma/sbfspot/forecast_today_kwh
-sma/sbfspot/forecast_remaining_today_kwh
-sma/sbfspot/forecast_tomorrow_kwh
-sma/sbfspot/forecast_correction_factor
-sma/sbfspot/forecast_accuracy_days
-sma/sbfspot/forecast_today_raw_kwh
-sma/sbfspot/energy_today_kwh
-sma/sbfspot/energy_total_kwh
+/data/forecast_solar.json      # Forecast.Solar Cache
+/data/forecast_learning.json   # Lernfaktor und Lerntage
 ```
 
-## Home Assistant Sensoren
+## MQTT/Home Assistant
 
-Nach MQTT Discovery bekommst du u.a.:
+Neue Sensoren:
 
 ```text
-sensor.sma_sbfspot_amann_pv_leistung_ist
-sensor.sma_sbfspot_amann_forecast_solar_jetzt_korrigiert
-sensor.sma_sbfspot_amann_forecast_solar_heute_korrigiert
-sensor.sma_sbfspot_amann_forecast_solar_rest_heute_korrigiert
-sensor.sma_sbfspot_amann_forecast_solar_morgen_korrigiert
-sensor.sma_sbfspot_amann_forecast_korrekturfaktor
-sensor.sma_sbfspot_amann_forecast_lerntage
+sensor.sma_sbfspot_amann_forecast_power_w
+sensor.sma_sbfspot_amann_forecast_today_kwh
+sensor.sma_sbfspot_amann_forecast_learning_factor
+sensor.sma_sbfspot_amann_forecast_learning_days
 ```
 
-Alte MQTT-Discovery-Leichen vom entfernten `pv_output_w` Sensor kannst du in HA löschen, falls er noch angezeigt wird.
+Die MQTT Availability ist getrennt von `status`:
 
-## Lokal bauen
+```text
+sma/sbfspot/availability = online/offline
+sma/sbfspot/status       = online/error/waiting/config_missing
+```
+
+Dadurch werden Sensoren nicht mehr wegen eines SBFspot-Fehlers automatisch `unavailable`.
+
+## Update auf Unraid
 
 ```bash
 cd /mnt/user/appdata/sma-sbfspot-runtime
@@ -89,7 +112,13 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-## Web
+Danach prüfen:
+
+```bash
+docker logs -f SMA-SBFspot-Runtime
+```
+
+Weboberfläche:
 
 ```text
 http://UNRAID-IP:8088
