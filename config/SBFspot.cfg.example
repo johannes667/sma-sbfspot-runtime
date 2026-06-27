@@ -1,13 +1,10 @@
-BTAddress=00:80:25:25:37:D7
-Password=0000
-LocalBTAddress=04:42:1A:59:F0:5A
-IP_Address=55.255.255.254
-Plantname=Amann
-Latitude=48.2173
-Longitude=9.8268
-Timezone=Europe/Berlin
+# Beispiel SBFspot.cfg - bitte LocalBTAddress, OutputPath, Timezone und Plantname anpassen.
+LocalBTAddress=00:00:00:00:00:00
 OutputPath=/data
-OutputPathEvents=/data
-CSV_Export=0
+Timezone=Europe/Berlin
+Plantname=Amann
+CSV_Export=1
+CSV_ExtendedHeader=1
 CSV_Header=1
-DateTimeFormat=%Y-%m-%d %H:%M:%S
+CSV_SaveZeroPower=1
+CSV_Delimiter=semicolon

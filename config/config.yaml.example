@@ -1,0 +1,48 @@
+# ==========================================
+# SMA SBFspot Runtime v2.2
+# ==========================================
+# Diese Datei ist die Docker-/App-Konfiguration.
+# Nicht in SBFspot.cfg einfügen.
+
+runtime:
+  interval: 300
+  web_port: 8088
+
+mqtt:
+  enabled: true
+  host: 192.168.2.115
+  port: 1883
+  username: sbfspot
+  password: ""
+  base_topic: sma/sbfspot
+  retain: true
+
+homeassistant:
+  discovery: true
+  discovery_prefix: homeassistant
+  device_name: SMA Wechselrichter Amann
+  device_id: sma_sbfspot_amann
+
+forecast_solar:
+  enabled: true
+  latitude: 48.23
+  longitude: 9.88
+  interval: 3600
+  api_key: ""
+
+  arrays:
+    - name: West
+      peak_power: 1.90
+      declination: 44
+      azimuth: 265
+      damping: 0
+
+    - name: Sued
+      peak_power: 1.71
+      declination: 44
+      azimuth: 185
+      damping: 0
+
+  learning:
+    enabled: true
+    days: 14
