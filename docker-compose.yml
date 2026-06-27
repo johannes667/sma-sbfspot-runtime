@@ -1,6 +1,6 @@
 services:
   sma-sbfspot-runtime:
-    image: ghcr.io/johannes667/sma-sbfspot-runtime:latest
+    image: ghcr.io/johannes667/sma-sbfspot-runtime:2.2
     build: .
     container_name: SMA-SBFspot-Runtime
     network_mode: host
@@ -19,6 +19,20 @@ services:
       MQTT_USER: "sbfspot"
       MQTT_PASSWORD: ""
       MQTT_BASE_TOPIC: "sma/sbfspot"
+      MQTT_RETAIN: "true"
       HA_DISCOVERY: "true"
+      HA_DISCOVERY_PREFIX: "homeassistant"
       DEVICE_NAME: "SMA Wechselrichter Amann"
       DEVICE_ID: "sma_sbfspot_amann"
+      FORECAST_ENABLE: "true"
+      FORECAST_LATITUDE: "48.2173"
+      FORECAST_LONGITUDE: "9.8268"
+      FORECAST_DECLINATION: "35"
+      FORECAST_AZIMUTH: "0"
+      FORECAST_KWP: "3.6"
+      FORECAST_INTERVAL: "3600"
+      FORECAST_API_KEY: ""
+      FORECAST_DAMPING: "0"
+      FORECAST_INVERTER_KW: ""
+      FORECAST_LEARNING_ENABLE: "true"
+      FORECAST_LEARNING_DAYS: "14"
