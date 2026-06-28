@@ -157,3 +157,46 @@ def cleanup_history(days: int = 90):
     with sqlite3.connect(DB_FILE) as con:
         con.execute("DELETE FROM samples WHERE ts < ?", (cutoff.isoformat(timespec="seconds"),))
         con.commit()
+
+
+def history_status() -> Dict[str, Any]:
+    """Return SQLite/history diagnostics for the WebGUI status page."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    init_db()
+    status: Dict[str, Any] = {
+        "ok": False,
+        "db_file": DB_FILE,
+        "exists": os.path.exists(DB_FILE),
+        "size_bytes": 0,
+        "samples": 0,
+        "first_ts": None,
+        "last_ts": None,
+        "last_age_seconds": None,
+        "filled_buckets_today": 0,
+        "real_buckets_today": 0,
+    }
+    try:
+        if os.path.exists(DB_FILE):
+            status["size_bytes"] = os.path.getsize(DB_FILE)
+        with sqlite3.connect(DB_FILE) as con:
+            row = con.execute("SELECT COUNT(*), MIN(ts), MAX(ts) FROM samples").fetchone()
+            status["samples"] = int(row[0] or 0)
+            status["first_ts"] = row[1]
+            status["last_ts"] = row[2]
+
+            today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+            real_today = con.execute("SELECT COUNT(*) FROM samples WHERE ts >= ?", (today.isoformat(timespec="seconds"),)).fetchone()[0]
+            status["real_buckets_today"] = int(real_today or 0)
+
+        last_dt = _parse_ts(status.get("last_ts"))
+        if last_dt:
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+            status["last_age_seconds"] = max(0, int((datetime.now().astimezone() - last_dt.astimezone()).total_seconds()))
+
+        status["filled_buckets_today"] = len(history_day(fill_missing=True))
+        status["ok"] = bool(status["exists"] and status["samples"] >= 0)
+        return status
+    except Exception as e:
+        status["error"] = str(e)
+        return status

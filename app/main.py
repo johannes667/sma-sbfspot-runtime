@@ -13,7 +13,7 @@ from config import (
 )
 from forecast_solar import get_forecast
 from log_utils import clear_log, log_event, read_log_lines
-from storage import history, history_day, read_state
+from storage import history, history_day, history_status, read_state
 
 app = Flask(__name__, static_folder="/web/static", static_url_path="")
 
@@ -92,9 +92,15 @@ def service_status():
             "detail": "gesendet" if s.get("ha_discovery_ok", HA_DISCOVERY) else "Fehler beim Senden",
             "last_ok": s.get("timestamp"),
         },
+        {
+            "name": "SQLite Historie",
+            "status": _traffic(history_status().get("ok", False), False),
+            "detail": f"{history_status().get('samples', 0)} Messpunkte · {round(history_status().get('size_bytes', 0) / 1024, 1)} KB",
+            "last_ok": history_status().get("last_ts"),
+        },
         {"name": "Webserver", "status": "ok", "detail": "läuft", "last_ok": datetime.now().astimezone().isoformat(timespec="seconds")},
     ]
-    return {"version": VERSION, "uptime_seconds": _uptime(), "services": services, "state": s}
+    return {"version": VERSION, "uptime_seconds": _uptime(), "services": services, "state": s, "history": history_status()}
 
 
 @app.route("/")
@@ -116,6 +122,12 @@ def api_history():
         return jsonify(history())
     return jsonify(history_day(fill_missing=fill))
 
+
+
+
+@app.route("/api/history/status")
+def api_history_status():
+    return jsonify(history_status())
 
 @app.route("/api/forecast")
 def api_forecast():
