@@ -4,6 +4,7 @@ from datetime import datetime
 
 from config import SBFSPOT_CFG
 from forecast_solar import forecast_state_fields, update_learning_from_state
+from log_utils import log_event
 from mqtt_client import publish_discovery, publish_state
 from parser import parse_output
 from storage import init_db, read_state, save_sample, write_state
@@ -11,6 +12,9 @@ from storage import init_db, read_state, save_sample, write_state
 
 def now_iso():
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+POWER_KEYS = {"power_w", "pac1_w", "pac2_w", "pac3_w", "pdc1_w", "pdc2_w", "pdc_total_w"}
 
 
 def keep_last_valid_values(new_state):
@@ -24,20 +28,34 @@ def keep_last_valid_values(new_state):
         "frequency_hz", "efficiency_percent", "serial"
     ]
     for key in keep_keys:
-        if new_state.get(key) is None and old.get(key) is not None:
-            new_state[key] = old.get(key)
+        if new_state.get(key) is None:
+            if key in POWER_KEYS:
+                new_state[key] = 0
+            elif old.get(key) is not None:
+                new_state[key] = old.get(key)
     return new_state
 
 
 def main():
     init_db()
-    publish_discovery()
+    log_event("INFO", "Collector-Lauf gestartet")
+    discovery_ok = publish_discovery()
 
     if not os.path.exists(SBFSPOT_CFG):
-        state = {"status": "config_missing", "availability": "online", "timestamp": now_iso(), "last_error": f"{SBFSPOT_CFG} fehlt"}
+        state = {
+            "status": "config_missing",
+            "availability": "online",
+            "timestamp": now_iso(),
+            "last_sbfspot_run": now_iso(),
+            "last_error": f"{SBFSPOT_CFG} fehlt",
+            "ha_discovery_ok": discovery_ok,
+        }
         state.update(forecast_state_fields())
         write_state(state)
-        publish_state(state)
+        mqtt_ok = publish_state(state)
+        state["mqtt_publish_ok"] = mqtt_ok
+        write_state(state)
+        log_event("ERROR", state["last_error"])
         return
 
     try:
@@ -56,16 +74,45 @@ def main():
             "status": "online" if ok else "error",
             "availability": "online",
             "timestamp": now_iso(),
+            "last_sbfspot_run": now_iso(),
+            "ha_discovery_ok": discovery_ok,
             **{k: v for k, v in parsed.items() if k != "raw_ok"},
             "last_error": "" if ok else output[-4000:],
         }
+        if ok:
+            log_event("INFO", f"SBFspot OK · AC {state.get('power_w', 0)} W · Heute {state.get('energy_today_kwh', '–')} kWh")
+        else:
+            log_event("WARNING", "SBFspot lieferte keine vollständigen Daten; Leistungswerte laufen auf 0 W")
     except Exception as e:
-        state = {"status": "error", "availability": "online", "timestamp": now_iso(), "last_error": str(e)}
+        state = {
+            "status": "error",
+            "availability": "online",
+            "timestamp": now_iso(),
+            "last_sbfspot_run": now_iso(),
+            "ha_discovery_ok": discovery_ok,
+            "last_error": str(e),
+            "power_w": 0,
+            "pac1_w": 0,
+            "pac2_w": 0,
+            "pac3_w": 0,
+            "pdc1_w": 0,
+            "pdc2_w": 0,
+            "pdc_total_w": 0,
+        }
+        log_event("ERROR", f"SBFspot Fehler: {e}")
 
     state = keep_last_valid_values(state)
     state.update(forecast_state_fields())
     write_state(state)
-    publish_state(state)
+    mqtt_ok = publish_state(state)
+    state["mqtt_publish_ok"] = mqtt_ok
+    state["last_mqtt_publish"] = now_iso()
+    write_state(state)
+
+    if mqtt_ok:
+        log_event("INFO", f"MQTT Publish OK · {state.get('mqtt_last_publish_count', 0)} Werte")
+    else:
+        log_event("ERROR", "MQTT Publish fehlgeschlagen")
 
     if state.get("status") == "online":
         save_sample(state)
