@@ -6,14 +6,14 @@ try:
 except Exception:  # pragma: no cover
     yaml = None
 
-VERSION = "2.5.2"
+VERSION = "2.6"
 CONFIG_DIR = os.getenv("CONFIG_DIR", "/config")
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 APP_CONFIG_FILE = os.getenv("APP_CONFIG_FILE", f"{CONFIG_DIR}/config.yaml")
 SBFSPOT_CFG = os.getenv("SBFSPOT_CFG", f"{CONFIG_DIR}/SBFspot.cfg")
 
 DEFAULT_CONFIG_YAML = """# ==========================================
-# SMA SBFspot Runtime v2.5.0
+# SMA SBFspot Runtime v2.6
 # ==========================================
 # Diese Datei ist die Docker-/App-Konfiguration.
 # SBFspot selbst bleibt separat in /config/SBFspot.cfg.
@@ -147,4 +147,4 @@ if not FORECAST_ARRAYS:
 STATE_FILE = f"{DATA_DIR}/state.json"
 DB_FILE = f"{DATA_DIR}/history.sqlite3"
 LOG_FILE = f"{DATA_DIR}/runtime.log"
-START_FILE = f"{DATA_DIR}/container_start.txt"
+START_FILE = os.getenv("START_FILE", "/tmp/sbfspot_container_started_at")

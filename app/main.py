@@ -7,17 +7,38 @@ from config import (
     HA_DISCOVERY,
     LOG_FILE,
     MQTT_ENABLE,
+    START_FILE,
     VERSION,
     WEB_PORT,
 )
-from forecast_solar import get_forecast, forecast_summary
+from forecast_solar import get_forecast
 from log_utils import clear_log, log_event, read_log_lines
 from storage import history, history_day, history_status, read_state
 
 app = Flask(__name__, static_folder="/web/static", static_url_path="")
 
-# Fallback nur für Sonderfälle. Die echte Container-Uptime kommt unten aus /proc/1/stat.
+# Robust fallback: funktioniert auch, wenn entrypoint.sh die Startdatei nicht anlegt.
 PROCESS_STARTED_AT = datetime.now(timezone.utc)
+
+
+def _ensure_start_file():
+    """Create / keep a stable container start timestamp.
+
+    Normalerweise schreibt entrypoint.sh diese Datei beim Containerstart.
+    Falls Unraid/Debug anders startet oder die Datei fehlt, legt die Web-App
+    sie einmalig selbst an. Wichtig: nicht bei jedem Refresh überschreiben.
+    """
+    try:
+        os.makedirs(os.path.dirname(START_FILE), exist_ok=True)
+        if not os.path.exists(START_FILE) or os.path.getsize(START_FILE) == 0:
+            with open(START_FILE, "w", encoding="utf-8") as f:
+                f.write(PROCESS_STARTED_AT.isoformat(timespec="seconds"))
+        return True
+    except Exception:
+        return False
+
+
+_ensure_start_file()
 
 
 def _parse_ts(value):
@@ -80,56 +101,15 @@ def _traffic(ok, warn=False, disabled=False):
     return "error"
 
 
-
-def _start_time_from_file():
-    # Wird von /app/entrypoint.sh bei jedem echten Containerstart neu geschrieben.
-    # Liegt absichtlich NICHT in /data, damit es nicht über Container-Neustarts persistiert.
-    for path in ("/tmp/sbfspot_container_started_at", "/run/sbfspot_container_started_at"):
-        try:
-            if os.path.exists(path):
-                text = open(path, "r", encoding="utf-8").read().strip()
-                ts = _parse_ts(text)
-                if ts:
-                    if ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=timezone.utc)
-                    return ts.astimezone(timezone.utc)
-        except Exception:
-            pass
-    return None
-
 def _container_started_at():
-    """Return container start time.
-
-    Primär nutzen wir die Datei, die entrypoint.sh bei jedem echten Docker-Start
-    nach /tmp schreibt. Das ist zuverlässiger als /data, weil /data persistent ist,
-    und zuverlässiger als reine Python-Prozesszeit, weil der Webprozess neu starten kann.
-    Falls die Datei fehlt, fallback auf /proc/1/stat und zuletzt auf Prozessstart.
-    """
-    start_from_file = _start_time_from_file()
-    if start_from_file:
-        return start_from_file
-
+    _ensure_start_file()
     try:
-        boot_time = None
-        with open("/proc/stat", "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("btime "):
-                    boot_time = int(line.split()[1])
-                    break
-
-        with open("/proc/1/stat", "r", encoding="utf-8") as f:
-            stat = f.read().strip()
-
-        after_comm = stat.rsplit(")", 1)[1].strip().split()
-        start_ticks = int(after_comm[19])
-        ticks_per_second = os.sysconf("SC_CLK_TCK")
-
-        if boot_time and ticks_per_second:
-            start_epoch = boot_time + (start_ticks / ticks_per_second)
-            return datetime.fromtimestamp(start_epoch, tz=timezone.utc)
+        with open(START_FILE, "r", encoding="utf-8") as f:
+            start = _parse_ts(f.read().strip())
+        if start:
+            return start.astimezone(timezone.utc)
     except Exception:
         pass
-
     return PROCESS_STARTED_AT
 
 
@@ -227,11 +207,7 @@ def api_history_status():
 
 @app.route("/api/forecast")
 def api_forecast():
-    data = get_forecast(False)
-    state = read_state()
-    if data.get("enabled", True):
-        data["summary"] = forecast_summary(data, state.get("energy_today_kwh"))
-    return jsonify(data)
+    return jsonify(get_forecast(False))
 
 
 @app.route("/api/status")
