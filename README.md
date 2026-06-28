@@ -1,4 +1,4 @@
-# SMA SBFspot Runtime 2.2.1
+# SMA SBFspot Runtime 2.3.0
 
 SMA Bluetooth PV-Auslesung für Docker/Unraid mit SBFspot, Web-Dashboard, MQTT, Home Assistant Discovery, SQLite-Historie und Forecast.Solar-Prognose.
 
