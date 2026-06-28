@@ -17,6 +17,29 @@ from storage import history, history_day, history_status, read_state
 
 app = Flask(__name__, static_folder="/web/static", static_url_path="")
 
+# Robust fallback: funktioniert auch, wenn entrypoint.sh die Startdatei nicht anlegt.
+PROCESS_STARTED_AT = datetime.now(timezone.utc)
+
+
+def _ensure_start_file():
+    """Create / keep a stable container start timestamp.
+
+    Normalerweise schreibt entrypoint.sh diese Datei beim Containerstart.
+    Falls Unraid/Debug anders startet oder die Datei fehlt, legt die Web-App
+    sie einmalig selbst an. Wichtig: nicht bei jedem Refresh überschreiben.
+    """
+    try:
+        os.makedirs(os.path.dirname(START_FILE), exist_ok=True)
+        if not os.path.exists(START_FILE) or os.path.getsize(START_FILE) == 0:
+            with open(START_FILE, "w", encoding="utf-8") as f:
+                f.write(PROCESS_STARTED_AT.isoformat(timespec="seconds"))
+        return True
+    except Exception:
+        return False
+
+
+_ensure_start_file()
+
 
 def _parse_ts(value):
     if not value:
@@ -78,15 +101,34 @@ def _traffic(ok, warn=False, disabled=False):
     return "error"
 
 
-def _uptime():
+def _container_started_at():
+    _ensure_start_file()
     try:
         with open(START_FILE, "r", encoding="utf-8") as f:
             start = _parse_ts(f.read().strip())
-        if not start:
-            return None
-        return max(0, int((datetime.now(timezone.utc) - start.astimezone(timezone.utc)).total_seconds()))
+        if start:
+            return start.astimezone(timezone.utc)
     except Exception:
-        return None
+        pass
+    return PROCESS_STARTED_AT
+
+
+def _uptime():
+    start = _container_started_at()
+    return max(0, int((datetime.now(timezone.utc) - start).total_seconds()))
+
+
+def _runtime_meta():
+    start = _container_started_at()
+    uptime = _uptime()
+    return {
+        "container_started_at": start.isoformat(timespec="seconds"),
+        "container_started_at_display": _format_ts(start.isoformat(timespec="seconds")),
+        "container_uptime_seconds": uptime,
+        "uptime_seconds": uptime,
+        "uptime_h": uptime // 3600,
+        "uptime_min": (uptime % 3600) // 60,
+    }
 
 
 def service_status():
@@ -132,7 +174,8 @@ def service_status():
         },
         {"name": "Webserver", "status": "ok", "detail": "läuft", "last_ok": _format_ts(datetime.now().astimezone().isoformat(timespec="seconds"))},
     ]
-    return {"version": VERSION, "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_display": _format_ts(s.get("last_sbfspot_success")), "last_successful_update_age": _format_age(s.get("last_sbfspot_success")), "services": services, "state": s, "history": history_status()}
+    meta = _runtime_meta()
+    return {"version": VERSION, **meta, "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_display": _format_ts(s.get("last_sbfspot_success")), "last_successful_update_age": _format_age(s.get("last_sbfspot_success")), "services": services, "state": {**s, **meta}, "history": history_status()}
 
 
 @app.route("/")
@@ -143,7 +186,8 @@ def index():
 @app.route("/api/live")
 @app.route("/api/state")
 def api_state():
-    return jsonify(read_state())
+    s = read_state()
+    return jsonify({**s, **_runtime_meta()})
 
 
 @app.route("/api/history")
@@ -169,7 +213,7 @@ def api_forecast():
 @app.route("/api/status")
 def api_status():
     s = read_state()
-    return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "timestamp_display": _format_ts(s.get("timestamp")), "last_error": s.get("last_error", ""), "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_display": _format_ts(s.get("last_sbfspot_success")), "last_successful_update_age": _format_age(s.get("last_sbfspot_success"))})
+    return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "timestamp_display": _format_ts(s.get("timestamp")), "last_error": s.get("last_error", ""), **_runtime_meta(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_display": _format_ts(s.get("last_sbfspot_success")), "last_successful_update_age": _format_age(s.get("last_sbfspot_success"))})
 
 
 @app.route("/api/services")
