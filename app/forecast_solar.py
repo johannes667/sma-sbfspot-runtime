@@ -17,14 +17,14 @@ from config import (
     FORECAST_LEARNING_DAYS,
     FORECAST_LEARNING_ENABLE,
     FORECAST_LEARNING_FILE,
+    FORECAST_LEARNING_MAX_FACTOR,
+    FORECAST_LEARNING_MIN_FACTOR,
+    FORECAST_LEARNING_SLOW_ALPHA,
+    FORECAST_LEARNING_TARGET_DAYS,
     FORECAST_LONGITUDE,
 )
 
 LOCAL_TZ = ZoneInfo("Europe/Berlin")
-MIN_RATIO = 0.75
-MAX_RATIO = 1.25
-MIN_EXPECTED_KWH_FOR_LEARNING = 1.0
-MIN_ACTUAL_KWH_FOR_LEARNING = 0.2
 
 
 def _read_json(path: str, default: Any):
@@ -43,20 +43,16 @@ def _write_json(path: str, data: Any):
     os.replace(tmp, path)
 
 
-def _ts_to_dt(ts: str):
+def _ts_to_epoch(ts: str) -> float:
+    """Forecast.Solar timestamps are usually local time without timezone."""
     try:
         value = str(ts).strip().replace(" ", "T").replace("Z", "+00:00")
         dt = datetime.fromisoformat(value)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=LOCAL_TZ)
-        return dt.astimezone(LOCAL_TZ)
+        return dt.timestamp()
     except Exception:
-        return None
-
-
-def _ts_to_epoch(ts: str) -> float:
-    dt = _ts_to_dt(ts)
-    return dt.timestamp() if dt else 0.0
+        return 0.0
 
 
 def _today_key() -> str:
@@ -84,21 +80,6 @@ def _now_power_from_series(watts: Dict[str, float]) -> float:
     return 0.0
 
 
-def _period_kwh_until_now(period_wh: Dict[str, float], factor: float = 1.0) -> float:
-    today = _today_key()
-    now = datetime.now(LOCAL_TZ)
-    total_wh = 0.0
-    for ts, value in (period_wh or {}).items():
-        dt = _ts_to_dt(ts)
-        if not dt or dt.date().isoformat() != today:
-            continue
-        # Forecast.Solar period values are timestamped at/near the end of each period.
-        # Nur Perioden bis jetzt zählen, damit der Lernvergleich nicht den ganzen Tag nimmt.
-        if dt <= now:
-            total_wh += float(value or 0)
-    return round((total_wh * factor) / 1000.0, 3)
-
-
 def _fetch_array(array: Dict[str, Any]) -> Dict[str, Any]:
     declination = float(array.get("declination", 35))
     azimuth = float(array.get("azimuth", 0))
@@ -112,7 +93,7 @@ def _fetch_array(array: Dict[str, Any]) -> Dict[str, Any]:
     if FORECAST_API_KEY:
         params["token"] = FORECAST_API_KEY
     url = base + (("?" + urlencode(params)) if params else "")
-    req = Request(url, headers={"User-Agent": "sma-sbfspot-runtime/2.6"})
+    req = Request(url, headers={"User-Agent": "sma-sbfspot-runtime/2.2"})
     with urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -149,20 +130,42 @@ def _aggregate(results: List[Tuple[Dict[str, Any], Dict[str, Any]]]) -> Dict[str
     }
 
 
-def _read_learning() -> Dict[str, Any]:
-    learning = _read_json(FORECAST_LEARNING_FILE, {})
-    if not isinstance(learning, dict):
-        learning = {}
-    samples = learning.get("samples", [])
-    if not isinstance(samples, list):
-        samples = []
-    learning["samples"] = samples
-    learning.setdefault("factor", 1.0)
-    return learning
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _period_expected_until_now_kwh(data: Dict[str, Any], corrected: bool = True) -> float:
+    """Sum Forecast.Solar period Wh up to now.
+
+    This is intentionally simple and robust: Forecast.Solar delivers period values
+    at timestamps over the day. We sum all periods whose timestamp is not in the
+    future. The value is used for the WebGUI cards and for cautious learning.
+    """
+    key = "watt_hours_period_corrected" if corrected else "watt_hours_period"
+    periods = data.get(key) or data.get("watt_hours_period") or {}
+    now = time.time()
+    total = 0.0
+    for ts, wh in periods.items():
+        epoch = _ts_to_epoch(ts)
+        if epoch and epoch <= now:
+            try:
+                total += float(wh or 0)
+            except Exception:
+                pass
+    return max(0.0, total / 1000.0)
+
+
+def get_learning_data() -> Dict[str, Any]:
+    data = _read_json(FORECAST_LEARNING_FILE, {})
+    if not isinstance(data, dict):
+        data = {}
+    data.setdefault("samples", [])
+    data.setdefault("factor", 1.0)
+    return data
 
 
 def get_learning_factor() -> float:
-    learning = _read_learning()
+    learning = get_learning_data()
     try:
         return float(learning.get("factor", 1.0))
     except Exception:
@@ -170,108 +173,120 @@ def get_learning_factor() -> float:
 
 
 def learning_days() -> int:
-    return len(_read_learning().get("samples", []))
+    samples = get_learning_data().get("samples", [])
+    return len(samples) if isinstance(samples, list) else 0
 
 
-def _learning_status() -> Dict[str, Any]:
-    learning = _read_learning()
-    days = len(learning.get("samples", []))
-    target = max(1, int(FORECAST_LEARNING_DAYS or 14))
-    confidence = min(1.0, days / target)
+def _learning_confidence(days: int) -> float:
+    target = max(1, int(FORECAST_LEARNING_TARGET_DAYS or FORECAST_LEARNING_DAYS or 14))
+    return round(_clamp(days / target, 0.0, 1.0), 3)
+
+
+def _learning_status(days: int) -> str:
+    target = max(1, int(FORECAST_LEARNING_TARGET_DAYS or FORECAST_LEARNING_DAYS or 14))
     if days <= 0:
-        text = f"lernt (0/{target} Tage)"
-    elif days < target:
-        text = f"lernt ({days}/{target} Tage)"
-    else:
-        text = f"stabilisiert ({days}/{target} Tage)"
-    return {
-        "learning_status": text,
-        "learning_confidence": round(confidence, 2),
-        "learning_target_days": target,
-        "learning_target_factor": round(float(learning.get("target_factor", learning.get("factor", 1.0)) or 1.0), 4),
-    }
+        return f"lernt (0/{target} Tage)"
+    if days < target:
+        return f"lernt ({days}/{target} Tage)"
+    return f"stabilisiert ({days} Tage, langsame Nachregelung)"
+
+
+def _average_ratio(samples: List[Dict[str, Any]]) -> float:
+    ratios = []
+    for sample in samples:
+        try:
+            ratio = float(sample.get("ratio", 1.0))
+            # Ausreißer hart begrenzen; Regen/Abschaltung soll den Faktor nicht zerstören.
+            if FORECAST_LEARNING_MIN_FACTOR <= ratio <= FORECAST_LEARNING_MAX_FACTOR:
+                ratios.append(ratio)
+        except Exception:
+            pass
+    if not ratios:
+        return 1.0
+    return sum(ratios) / len(ratios)
 
 
 def _apply_factor(data: Dict[str, Any], factor: float) -> Dict[str, Any]:
     out = dict(data)
+    days = learning_days()
     out["learning_factor"] = round(factor, 4)
-    out["learning_days"] = learning_days()
-    out.update(_learning_status())
+    out["learning_days"] = days
+    out["learning_target_days"] = int(FORECAST_LEARNING_TARGET_DAYS or FORECAST_LEARNING_DAYS or 14)
+    out["learning_confidence"] = _learning_confidence(days)
+    out["learning_status"] = _learning_status(days)
     out["watts_corrected"] = {k: round(float(v or 0) * factor, 3) for k, v in data.get("watts", {}).items()}
     out["watt_hours_period_corrected"] = {k: round(float(v or 0) * factor, 3) for k, v in data.get("watt_hours_period", {}).items()}
     out["watt_hours_day_corrected"] = {k: round(float(v or 0) * factor, 3) for k, v in data.get("watt_hours_day", {}).items()}
-    today = _today_key()
-    raw_day_wh = (data.get("watt_hours_day") or {}).get(today)
-    out["forecast_today_raw_kwh"] = round(float(raw_day_wh or 0) / 1000.0, 3)
-    out["forecast_expected_until_now_kwh"] = _period_kwh_until_now(data.get("watt_hours_period", {}), factor)
+    out["forecast_expected_until_now_kwh"] = round(_period_expected_until_now_kwh(out, corrected=True), 3)
     return out
 
 
-def _sample_weight(actual_kwh: float, expected_kwh: float) -> float:
-    # Vollere Tage sind aussagekräftiger; sehr kleine Morgen-/Abendwerte zählen kaum.
-    progress = min(1.0, max(0.1, expected_kwh / 8.0))
-    if actual_kwh <= MIN_ACTUAL_KWH_FOR_LEARNING or expected_kwh <= MIN_EXPECTED_KWH_FOR_LEARNING:
-        return 0.0
-    return round(progress, 3)
-
-
 def update_learning_from_state(state: Dict[str, Any]):
+    """Cautious 14-day learning.
+
+    Learning is based on the current day, but only after enough of the forecast day
+    has already happened. During the first target days the factor follows the
+    moving average. Afterwards it only moves slowly towards the target average.
+    """
     if not FORECAST_LEARNING_ENABLE:
         return
-    actual = state.get("energy_today_kwh")
-    if actual is None:
+    today = _today_key()
+    try:
+        actual_kwh = float(state.get("energy_today_kwh") or 0)
+    except Exception:
+        return
+    if actual_kwh <= 0:
         return
 
     cache = _read_json(FORECAST_CACHE_FILE, {})
-    raw_period = cache.get("watt_hours_period") or {}
-    expected_until_now = _period_kwh_until_now(raw_period, 1.0)
-    actual_kwh = float(actual)
-    weight = _sample_weight(actual_kwh, expected_until_now)
-    if weight <= 0:
+    if not cache:
+        return
+    day_wh = (cache.get("watt_hours_day") or {}).get(today)
+    if not day_wh:
+        return
+    forecast_day_kwh = float(day_wh) / 1000.0
+    expected_until_now_kwh = _period_expected_until_now_kwh(cache, corrected=False)
+    if forecast_day_kwh <= 0 or expected_until_now_kwh <= 0:
         return
 
-    ratio_raw = actual_kwh / expected_until_now
-    # Harte Ausreißer ignorieren: Abschaltung, starker Datenfehler, API-Ausreißer.
-    if ratio_raw < 0.35 or ratio_raw > 2.2:
+    # Erst lernen, wenn mindestens 35 % der Tagesprognose bereits vorbei sind.
+    progress = expected_until_now_kwh / forecast_day_kwh
+    if progress < 0.35:
         return
-    ratio = max(MIN_RATIO, min(MAX_RATIO, ratio_raw))
 
-    today = _today_key()
-    target_days = max(1, int(FORECAST_LEARNING_DAYS or 14))
-    learning = _read_learning()
-    samples = [s for s in learning.get("samples", []) if s.get("date") != today]
+    raw_ratio = actual_kwh / expected_until_now_kwh
+    ratio = _clamp(raw_ratio, FORECAST_LEARNING_MIN_FACTOR, FORECAST_LEARNING_MAX_FACTOR)
+
+    learning = get_learning_data()
+    samples = learning.get("samples", []) if isinstance(learning.get("samples", []), list) else []
+    samples = [s for s in samples if s.get("date") != today]
     samples.append({
         "date": today,
         "actual_kwh": round(actual_kwh, 3),
-        "expected_until_now_kwh": round(expected_until_now, 3),
+        "expected_until_now_kwh": round(expected_until_now_kwh, 3),
+        "forecast_day_kwh": round(forecast_day_kwh, 3),
+        "progress": round(progress, 3),
         "ratio": round(ratio, 4),
-        "raw_ratio": round(ratio_raw, 4),
-        "weight": weight,
-        "updated_at": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
+        "raw_ratio": round(raw_ratio, 4),
     })
-    samples = samples[-target_days:]
-
-    weight_sum = sum(float(s.get("weight", 1.0) or 1.0) for s in samples)
-    target_factor = sum(float(s.get("ratio", 1.0)) * float(s.get("weight", 1.0) or 1.0) for s in samples) / max(weight_sum, 0.001)
+    samples = samples[-max(1, int(FORECAST_LEARNING_DAYS or 14)):]
+    target_factor = _clamp(_average_ratio(samples), FORECAST_LEARNING_MIN_FACTOR, FORECAST_LEARNING_MAX_FACTOR)
     old_factor = float(learning.get("factor", 1.0) or 1.0)
-
-    # Einlernphase: folgt schneller. Nach Ziel-Tagen: nur noch langsam nachregeln.
+    target_days = max(1, int(FORECAST_LEARNING_TARGET_DAYS or FORECAST_LEARNING_DAYS or 14))
     if len(samples) < target_days:
-        alpha = 0.35
+        factor = target_factor
     else:
-        alpha = 0.12
-    factor = (old_factor * (1.0 - alpha)) + (target_factor * alpha)
-    factor = max(MIN_RATIO, min(MAX_RATIO, factor))
-
+        alpha = _clamp(float(FORECAST_LEARNING_SLOW_ALPHA or 0.10), 0.01, 1.0)
+        factor = (old_factor * (1.0 - alpha)) + (target_factor * alpha)
+    factor = _clamp(factor, FORECAST_LEARNING_MIN_FACTOR, FORECAST_LEARNING_MAX_FACTOR)
     _write_json(FORECAST_LEARNING_FILE, {
         "factor": round(factor, 4),
         "target_factor": round(target_factor, 4),
         "samples": samples,
         "updated_at": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
-        "method": "v2.6 weighted_until_now_slow_after_target",
-        "target_days": target_days,
+        "status": _learning_status(len(samples)),
+        "confidence": _learning_confidence(len(samples)),
     })
-
 
 def get_forecast(force: bool = False) -> Dict[str, Any]:
     if not FORECAST_ENABLE:
@@ -310,16 +325,17 @@ def forecast_state_fields() -> Dict[str, Any]:
     today = _today_key()
     day_wh = (data.get("watt_hours_day_corrected") or data.get("watt_hours_day") or {}).get(today)
     now_w = _now_power_from_series(watts)
+    expected_until_now = float(data.get("forecast_expected_until_now_kwh") or _period_expected_until_now_kwh(data, corrected=True))
+    forecast_today = round(float(day_wh or 0) / 1000.0, 3)
     return {
         "forecast_power_w": round(max(now_w, 0), 1),
-        "forecast_today_kwh": round(float(day_wh or 0) / 1000.0, 3),
-        "forecast_today_raw_kwh": float(data.get("forecast_today_raw_kwh", 0) or 0),
-        "forecast_expected_until_now_kwh": float(data.get("forecast_expected_until_now_kwh", 0) or 0),
+        "forecast_today_kwh": forecast_today,
+        "forecast_today_raw_kwh": round(float(((data.get("watt_hours_day") or {}).get(today)) or 0) / 1000.0, 3),
+        "forecast_expected_until_now_kwh": round(expected_until_now, 3),
         "forecast_updated_at": data.get("updated_at"),
         "forecast_learning_factor": round(factor, 4),
         "forecast_learning_days": int(data.get("learning_days", 0) or 0),
-        "forecast_learning_status": data.get("learning_status"),
-        "forecast_learning_confidence": data.get("learning_confidence"),
-        "forecast_learning_target_days": data.get("learning_target_days"),
-        "forecast_learning_target_factor": data.get("learning_target_factor"),
+        "forecast_learning_target_days": int(data.get("learning_target_days", FORECAST_LEARNING_TARGET_DAYS) or 14),
+        "forecast_learning_confidence": float(data.get("learning_confidence", 0.0) or 0.0),
+        "forecast_learning_status": data.get("learning_status") or _learning_status(int(data.get("learning_days", 0) or 0)),
     }

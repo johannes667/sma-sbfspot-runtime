@@ -6,7 +6,7 @@ try:
 except Exception:  # pragma: no cover
     yaml = None
 
-VERSION = "2.6"
+VERSION = "2.6.0"
 CONFIG_DIR = os.getenv("CONFIG_DIR", "/config")
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 APP_CONFIG_FILE = os.getenv("APP_CONFIG_FILE", f"{CONFIG_DIR}/config.yaml")
@@ -62,6 +62,10 @@ forecast_solar:
   learning:
     enabled: true
     days: 14
+    target_days: 14
+    min_factor: 0.75
+    max_factor: 1.25
+    slow_alpha: 0.10
 """
 
 
@@ -132,6 +136,10 @@ FORECAST_LEARNING_FILE = f"{DATA_DIR}/forecast_learning.json"
 FORECAST_LEARNING = FORECAST_CONFIG.get("learning", {}) if isinstance(FORECAST_CONFIG.get("learning", {}), dict) else {}
 FORECAST_LEARNING_ENABLE = _to_bool(os.getenv("FORECAST_LEARNING_ENABLE", FORECAST_LEARNING.get("enabled", True)), True)
 FORECAST_LEARNING_DAYS = int(os.getenv("FORECAST_LEARNING_DAYS", str(FORECAST_LEARNING.get("days", 14))))
+FORECAST_LEARNING_TARGET_DAYS = int(os.getenv("FORECAST_LEARNING_TARGET_DAYS", str(FORECAST_LEARNING.get("target_days", FORECAST_LEARNING_DAYS))))
+FORECAST_LEARNING_MIN_FACTOR = float(os.getenv("FORECAST_LEARNING_MIN_FACTOR", str(FORECAST_LEARNING.get("min_factor", 0.75))))
+FORECAST_LEARNING_MAX_FACTOR = float(os.getenv("FORECAST_LEARNING_MAX_FACTOR", str(FORECAST_LEARNING.get("max_factor", 1.25))))
+FORECAST_LEARNING_SLOW_ALPHA = float(os.getenv("FORECAST_LEARNING_SLOW_ALPHA", str(FORECAST_LEARNING.get("slow_alpha", 0.10))))
 
 # Fallback auf alte ENV-Einflächen-Konfiguration, falls keine arrays in config.yaml stehen.
 FORECAST_ARRAYS = FORECAST_CONFIG.get("arrays") or []

@@ -4,9 +4,10 @@ CONFIG_DIR="${CONFIG_DIR:-/config}"
 DATA_DIR="${DATA_DIR:-/data}"
 CFG="${SBFSPOT_CFG:-$CONFIG_DIR/SBFspot.cfg}"
 APP_CFG="${APP_CONFIG_FILE:-$CONFIG_DIR/config.yaml}"
-mkdir -p "$CONFIG_DIR" "$DATA_DIR"
 START_FILE="${START_FILE:-/tmp/sbfspot_container_started_at}"
-# Bei jedem echten Containerstart neu setzen. Bleibt stabil, falls nur der Python-Webprozess neu startet.
+mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$(dirname "$START_FILE")"
+export PYTHONPATH="/app:${PYTHONPATH:-}"
+# Bei jedem echten Containerstart neu schreiben. /tmp ist nicht persistent.
 date -Iseconds > "$START_FILE"
 if [[ ! -f "$CFG" ]]; then
   cp /config/SBFspot.cfg.example "$CFG"
