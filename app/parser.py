@@ -52,8 +52,17 @@ def parse_output(text: str) -> Dict[str, Any]:
         data['energy_today_kwh'] = _label_number(r'\bEToday:\s*([-+]?\d+(?:[.,]\d+)?)\s*kWh', text)
     if data['energy_total_kwh'] is None:
         data['energy_total_kwh'] = _label_number(r'\bETotal:\s*([-+]?\d+(?:[.,]\d+)?)\s*kWh', text)
+    raw_ok = any(data.get(k) is not None for k in ('power_w', 'energy_today_kwh', 'energy_total_kwh', 'temperature_c', 'pdc1_w', 'pac1_w')) and ('INFO: Done.' in text or 'Energy Production:' in text or 'AC Spot Data:' in text)
+
+    # Leistungswerte dürfen für Home Assistant und Diagramme nicht als unknown laufen.
+    # Fehlende Leistungen werden deshalb als 0 W veröffentlicht; Energiezähler bleiben unverändert.
+    power_keys = ('power_w', 'pac1_w', 'pac2_w', 'pac3_w', 'pdc1_w', 'pdc2_w')
+    for key in power_keys:
+        if data.get(key) is None:
+            data[key] = 0
+
     p1, p2 = data.get('pdc1_w'), data.get('pdc2_w')
-    data['pdc_total_w'] = round((p1 or 0) + (p2 or 0), 3) if p1 is not None or p2 is not None else None
+    data['pdc_total_w'] = round((p1 or 0) + (p2 or 0), 3)
     if data['pdc_total_w'] and data.get('power_w') is not None and data['pdc_total_w'] > 0:
         data['efficiency_percent'] = round(data['power_w'] / data['pdc_total_w'] * 100, 2)
     else:
@@ -65,5 +74,5 @@ def parse_output(text: str) -> Dict[str, Any]:
             serial = m.group(1)
             break
     data['serial'] = serial
-    data['raw_ok'] = any(data.get(k) is not None for k in ('power_w', 'energy_today_kwh', 'energy_total_kwh', 'temperature_c', 'pdc1_w', 'pac1_w')) and ('INFO: Done.' in text or 'Energy Production:' in text or 'AC Spot Data:' in text)
+    data['raw_ok'] = raw_ok
     return data
