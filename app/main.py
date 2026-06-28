@@ -11,7 +11,7 @@ from config import (
     VERSION,
     WEB_PORT,
 )
-from forecast_solar import get_forecast
+from forecast_solar import get_forecast, forecast_summary
 from log_utils import clear_log, log_event, read_log_lines
 from storage import history, history_day, history_status, read_state
 
@@ -207,7 +207,11 @@ def api_history_status():
 
 @app.route("/api/forecast")
 def api_forecast():
-    return jsonify(get_forecast(False))
+    data = get_forecast(False)
+    state = read_state()
+    if data.get("enabled", True):
+        data["summary"] = forecast_summary(data, state.get("energy_today_kwh"))
+    return jsonify(data)
 
 
 @app.route("/api/status")
