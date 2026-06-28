@@ -1,4 +1,4 @@
-# SMA SBFspot Runtime 2.3.1
+# SMA SBFspot Runtime 2.4.0
 
 SMA Bluetooth PV-Auslesung für Docker/Unraid mit SBFspot, Web-Dashboard, MQTT, Home Assistant Discovery, SQLite-Historie und Forecast.Solar-Prognose.
 
@@ -140,7 +140,14 @@ rm -f /mnt/user/appdata/sma-sbfspot/data/forecast_learning.json
 Dann Container neu bauen/starten.
 
 
-## Neu in 2.3.1
+## Neu in 2.4.0
 
 - Statusseite zeigt SQLite-/Historie-Diagnose: Datei, Größe, Messpunkte, erster/letzter Eintrag und heutige Buckets.
 - Neuer API-Endpunkt: `/api/history/status`.
+
+
+## Version 2.4.0
+
+- WebGUI zeigt jetzt Container-Uptime.
+- WebGUI zeigt das letzte erfolgreiche SBFspot-Update inklusive Altersanzeige.
+- Erfolgreiche SBFspot-Läufe werden persistent im State gespeichert.
