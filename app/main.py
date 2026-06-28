@@ -7,7 +7,6 @@ from config import (
     HA_DISCOVERY,
     LOG_FILE,
     MQTT_ENABLE,
-    START_FILE,
     VERSION,
     WEB_PORT,
 )
@@ -17,28 +16,8 @@ from storage import history, history_day, history_status, read_state
 
 app = Flask(__name__, static_folder="/web/static", static_url_path="")
 
-# Robust fallback: funktioniert auch, wenn entrypoint.sh die Startdatei nicht anlegt.
+# Fallback nur für Sonderfälle. Die echte Container-Uptime kommt unten aus /proc/1/stat.
 PROCESS_STARTED_AT = datetime.now(timezone.utc)
-
-
-def _ensure_start_file():
-    """Create / keep a stable container start timestamp.
-
-    Normalerweise schreibt entrypoint.sh diese Datei beim Containerstart.
-    Falls Unraid/Debug anders startet oder die Datei fehlt, legt die Web-App
-    sie einmalig selbst an. Wichtig: nicht bei jedem Refresh überschreiben.
-    """
-    try:
-        os.makedirs(os.path.dirname(START_FILE), exist_ok=True)
-        if not os.path.exists(START_FILE) or os.path.getsize(START_FILE) == 0:
-            with open(START_FILE, "w", encoding="utf-8") as f:
-                f.write(PROCESS_STARTED_AT.isoformat(timespec="seconds"))
-        return True
-    except Exception:
-        return False
-
-
-_ensure_start_file()
 
 
 def _parse_ts(value):
@@ -102,14 +81,35 @@ def _traffic(ok, warn=False, disabled=False):
 
 
 def _container_started_at():
-    _ensure_start_file()
+    """Return the real container start time based on PID 1.
+
+    /proc/1/stat Feld 22 enthält die Startzeit von PID 1 in Clock-Ticks
+    seit Systemstart. Zusammen mit btime aus /proc/stat ergibt das die
+    echte Container-Laufzeit. Dadurch wird die Uptime bei jedem Container-
+    Neustart automatisch genullt und hängt nicht mehr an einer Datei in /data.
+    """
     try:
-        with open(START_FILE, "r", encoding="utf-8") as f:
-            start = _parse_ts(f.read().strip())
-        if start:
-            return start.astimezone(timezone.utc)
+        with open("/proc/stat", "r", encoding="utf-8") as f:
+            boot_time = None
+            for line in f:
+                if line.startswith("btime "):
+                    boot_time = int(line.split()[1])
+                    break
+
+        with open("/proc/1/stat", "r", encoding="utf-8") as f:
+            stat = f.read().strip()
+
+        # comm kann Leerzeichen/Klammern enthalten, deshalb nach dem letzten ')' splitten.
+        after_comm = stat.rsplit(")", 1)[1].strip().split()
+        start_ticks = int(after_comm[19])  # Feld 22, nach Entfernen der ersten 2 Felder Index 19
+        ticks_per_second = os.sysconf(os.sysconf_names.get("SC_CLK_TCK", "SC_CLK_TCK"))
+
+        if boot_time and ticks_per_second:
+            start_epoch = boot_time + (start_ticks / ticks_per_second)
+            return datetime.fromtimestamp(start_epoch, tz=timezone.utc)
     except Exception:
         pass
+
     return PROCESS_STARTED_AT
 
 

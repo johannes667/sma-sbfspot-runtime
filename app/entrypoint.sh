@@ -5,9 +5,6 @@ DATA_DIR="${DATA_DIR:-/data}"
 CFG="${SBFSPOT_CFG:-$CONFIG_DIR/SBFspot.cfg}"
 APP_CFG="${APP_CONFIG_FILE:-$CONFIG_DIR/config.yaml}"
 mkdir -p "$CONFIG_DIR" "$DATA_DIR"
-if [[ ! -s "$DATA_DIR/container_start.txt" ]]; then
-  date -Iseconds > "$DATA_DIR/container_start.txt"
-fi
 if [[ ! -f "$CFG" ]]; then
   cp /config/SBFspot.cfg.example "$CFG"
   echo "Created default SBFspot config at $CFG. Please edit it and restart the container."
