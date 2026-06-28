@@ -25,7 +25,7 @@ def keep_last_valid_values(new_state):
         "power_w", "pac1_w", "pac2_w", "pac3_w", "energy_today_kwh", "energy_total_kwh",
         "temperature_c", "dc_voltage_1_v", "dc_current_1_a", "pdc1_w", "dc_voltage_2_v",
         "dc_current_2_a", "pdc2_w", "pdc_total_w", "ac_voltage_1_v", "ac_current_1_a",
-        "frequency_hz", "efficiency_percent", "serial"
+        "frequency_hz", "efficiency_percent", "serial", "last_sbfspot_success"
     ]
     for key in keep_keys:
         if new_state.get(key) is None:
@@ -78,6 +78,7 @@ def main():
             "ha_discovery_ok": discovery_ok,
             **{k: v for k, v in parsed.items() if k != "raw_ok"},
             "last_error": "" if ok else output[-4000:],
+            "last_sbfspot_success": now_iso() if ok else None,
         }
         if ok:
             log_event("INFO", f"SBFspot OK · AC {state.get('power_w', 0)} W · Heute {state.get('energy_today_kwh', '–')} kWh")

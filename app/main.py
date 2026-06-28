@@ -36,6 +36,22 @@ def _age_seconds(value):
     return max(0, int((datetime.now().astimezone() - ts.astimezone()).total_seconds()))
 
 
+
+def _format_age(value):
+    age = _age_seconds(value)
+    if age is None:
+        return "Noch kein OK"
+    if age < 60:
+        return "gerade eben"
+    minutes = age // 60
+    if minutes < 60:
+        return f"vor {minutes} Min"
+    hours = minutes // 60
+    if hours < 24:
+        return f"vor {hours} Std {minutes % 60} Min"
+    days = hours // 24
+    return f"vor {days} Tage"
+
 def _traffic(ok, warn=False, disabled=False):
     if disabled:
         return "disabled"
@@ -100,7 +116,7 @@ def service_status():
         },
         {"name": "Webserver", "status": "ok", "detail": "läuft", "last_ok": datetime.now().astimezone().isoformat(timespec="seconds")},
     ]
-    return {"version": VERSION, "uptime_seconds": _uptime(), "services": services, "state": s, "history": history_status()}
+    return {"version": VERSION, "uptime_seconds": _uptime(), "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_age": _format_age(s.get("last_sbfspot_success")), "services": services, "state": s, "history": history_status()}
 
 
 @app.route("/")
@@ -137,7 +153,7 @@ def api_forecast():
 @app.route("/api/status")
 def api_status():
     s = read_state()
-    return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "last_error": s.get("last_error", "")})
+    return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "last_error": s.get("last_error", ""), "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_age": _format_age(s.get("last_sbfspot_success"))})
 
 
 @app.route("/api/services")
