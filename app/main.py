@@ -13,7 +13,7 @@ from config import (
 )
 from forecast_solar import get_forecast
 from log_utils import clear_log, log_event, read_log_lines
-from storage import history, read_state
+from storage import history, history_day, read_state
 
 app = Flask(__name__, static_folder="/web/static", static_url_path="")
 
@@ -110,7 +110,11 @@ def api_state():
 
 @app.route("/api/history")
 def api_history():
-    return jsonify(history())
+    mode = request.args.get("mode", "day")
+    fill = request.args.get("fill", "1") not in ("0", "false", "False", "no")
+    if mode == "raw":
+        return jsonify(history())
+    return jsonify(history_day(fill_missing=fill))
 
 
 @app.route("/api/forecast")

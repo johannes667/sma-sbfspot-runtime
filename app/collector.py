@@ -7,7 +7,7 @@ from forecast_solar import forecast_state_fields, update_learning_from_state
 from log_utils import log_event
 from mqtt_client import publish_discovery, publish_state
 from parser import parse_output
-from storage import init_db, read_state, save_sample, write_state
+from storage import cleanup_history, init_db, read_state, save_sample, write_state
 
 
 def now_iso():
@@ -114,8 +114,12 @@ def main():
     else:
         log_event("ERROR", "MQTT Publish fehlgeschlagen")
 
+    # v2.3: always persist one sample per collector run. Missing/invalid power becomes 0 W.
+    # This gives the WebGUI a stable day history even after SBFspot errors or restarts.
+    save_sample(state)
+    cleanup_history(90)
+
     if state.get("status") == "online":
-        save_sample(state)
         update_learning_from_state(state)
 
     print(f"collector_status={state.get('status')}")

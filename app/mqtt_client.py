@@ -62,7 +62,7 @@ def publish_state(state: Dict[str, Any]) -> bool:
 def publish_discovery() -> bool:
     if not MQTT_ENABLE or not HA_DISCOVERY:
         return True
-    device = {"identifiers": [DEVICE_ID], "name": DEVICE_NAME, "manufacturer": "SMA", "model": "SBFspot Runtime 2.2.1"}
+    device = {"identifiers": [DEVICE_ID], "name": DEVICE_NAME, "manufacturer": "SMA", "model": "SBFspot Runtime 2.3.0"}
     sensors = {
         "power_w": ("PV Ist-Leistung", "W", "power", "measurement"),
         "forecast_power_w": ("Forecast.Solar Leistung", "W", "power", "measurement"),
