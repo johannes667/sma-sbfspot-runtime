@@ -21,10 +21,26 @@ app = Flask(__name__, static_folder="/web/static", static_url_path="")
 def _parse_ts(value):
     if not value:
         return None
+    text = str(value).strip()
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
     except Exception:
+        pass
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%d.%m.%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=datetime.now().astimezone().tzinfo)
+        except Exception:
+            pass
+    return None
+
+
+def _format_ts(value):
+    ts = _parse_ts(value)
+    if not ts:
         return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    return ts.astimezone().strftime("%d.%m.%Y %H:%M:%S")
 
 
 def _age_seconds(value):
@@ -82,41 +98,41 @@ def service_status():
             "name": "SBFspot",
             "status": _traffic(s.get("status") == "online", stale),
             "detail": "läuft" if s.get("status") == "online" else (s.get("last_error") or s.get("status") or "wartet"),
-            "last_ok": s.get("last_sbfspot_run") or s.get("timestamp"),
+            "last_ok": _format_ts(s.get("last_sbfspot_success") or s.get("last_sbfspot_run") or s.get("timestamp")),
         },
         {
             "name": "MQTT",
             "status": _traffic(bool(s.get("mqtt_publish_ok", MQTT_ENABLE)), False, not MQTT_ENABLE),
             "detail": "verbunden" if s.get("mqtt_publish_ok", MQTT_ENABLE) else "Publish fehlgeschlagen",
-            "last_ok": s.get("last_mqtt_publish"),
+            "last_ok": _format_ts(s.get("last_mqtt_publish")),
         },
         {
             "name": "Forecast.Solar",
             "status": _traffic(bool(s.get("forecast_updated_at") or not FORECAST_ENABLE), False, not FORECAST_ENABLE),
             "detail": "aktiv" if FORECAST_ENABLE else "deaktiviert",
-            "last_ok": s.get("forecast_updated_at"),
+            "last_ok": _format_ts(s.get("forecast_updated_at")),
         },
         {
             "name": "CSV / Daten",
             "status": _traffic(age is not None and age <= 900, age is not None and age > 600),
             "detail": f"letzte Aktualisierung vor {age}s" if age is not None else "noch keine Daten",
-            "last_ok": s.get("timestamp"),
+            "last_ok": _format_ts(s.get("timestamp")),
         },
         {
             "name": "Home Assistant Discovery",
             "status": _traffic(bool(s.get("ha_discovery_ok", HA_DISCOVERY)), False, not HA_DISCOVERY),
             "detail": "gesendet" if s.get("ha_discovery_ok", HA_DISCOVERY) else "Fehler beim Senden",
-            "last_ok": s.get("timestamp"),
+            "last_ok": _format_ts(s.get("timestamp")),
         },
         {
             "name": "SQLite Historie",
             "status": _traffic(history_status().get("ok", False), False),
             "detail": f"{history_status().get('samples', 0)} Messpunkte · {round(history_status().get('size_bytes', 0) / 1024, 1)} KB",
-            "last_ok": history_status().get("last_ts"),
+            "last_ok": history_status().get("last_ts_display") or _format_ts(history_status().get("last_ts")),
         },
-        {"name": "Webserver", "status": "ok", "detail": "läuft", "last_ok": datetime.now().astimezone().isoformat(timespec="seconds")},
+        {"name": "Webserver", "status": "ok", "detail": "läuft", "last_ok": _format_ts(datetime.now().astimezone().isoformat(timespec="seconds"))},
     ]
-    return {"version": VERSION, "uptime_seconds": _uptime(), "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_age": _format_age(s.get("last_sbfspot_success")), "services": services, "state": s, "history": history_status()}
+    return {"version": VERSION, "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_display": _format_ts(s.get("last_sbfspot_success")), "last_successful_update_age": _format_age(s.get("last_sbfspot_success")), "services": services, "state": s, "history": history_status()}
 
 
 @app.route("/")
@@ -153,7 +169,7 @@ def api_forecast():
 @app.route("/api/status")
 def api_status():
     s = read_state()
-    return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "last_error": s.get("last_error", ""), "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_age": _format_age(s.get("last_sbfspot_success"))})
+    return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "timestamp_display": _format_ts(s.get("timestamp")), "last_error": s.get("last_error", ""), "container_uptime_seconds": _uptime(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_display": _format_ts(s.get("last_sbfspot_success")), "last_successful_update_age": _format_age(s.get("last_sbfspot_success"))})
 
 
 @app.route("/api/services")

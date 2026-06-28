@@ -45,10 +45,28 @@ def read_state() -> Dict[str, Any]:
 def _parse_ts(value: Any) -> Optional[datetime]:
     if not value:
         return None
+    text = str(value).strip()
+    # Neu: ISO mit lokaler Zeitzone, z. B. 2026-06-28T16:36:55+02:00
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
     except Exception:
+        pass
+    # Altbestand aus früherer SQLite-Version: 26/06/2026 09:50:04
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%d.%m.%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=datetime.now().astimezone().tzinfo)
+        except Exception:
+            pass
+    return None
+
+
+def _display_ts(value: Any) -> Optional[str]:
+    dt = _parse_ts(value)
+    if not dt:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    return dt.astimezone().strftime("%d.%m.%Y %H:%M:%S")
 
 
 def _bucket_ts(value: Any) -> str:
@@ -183,6 +201,8 @@ def history_status() -> Dict[str, Any]:
             status["samples"] = int(row[0] or 0)
             status["first_ts"] = row[1]
             status["last_ts"] = row[2]
+            status["first_ts_display"] = _display_ts(row[1])
+            status["last_ts_display"] = _display_ts(row[2])
 
             today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
             real_today = con.execute("SELECT COUNT(*) FROM samples WHERE ts >= ?", (today.isoformat(timespec="seconds"),)).fetchone()[0]
