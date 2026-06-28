@@ -6,7 +6,7 @@ try:
 except Exception:  # pragma: no cover
     yaml = None
 
-VERSION = "2.5.1"
+VERSION = "2.5.2"
 CONFIG_DIR = os.getenv("CONFIG_DIR", "/config")
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 APP_CONFIG_FILE = os.getenv("APP_CONFIG_FILE", f"{CONFIG_DIR}/config.yaml")

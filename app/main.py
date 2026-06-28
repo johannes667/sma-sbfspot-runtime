@@ -80,17 +80,38 @@ def _traffic(ok, warn=False, disabled=False):
     return "error"
 
 
-def _container_started_at():
-    """Return the real container start time based on PID 1.
 
-    /proc/1/stat Feld 22 enthält die Startzeit von PID 1 in Clock-Ticks
-    seit Systemstart. Zusammen mit btime aus /proc/stat ergibt das die
-    echte Container-Laufzeit. Dadurch wird die Uptime bei jedem Container-
-    Neustart automatisch genullt und hängt nicht mehr an einer Datei in /data.
+def _start_time_from_file():
+    # Wird von /app/entrypoint.sh bei jedem echten Containerstart neu geschrieben.
+    # Liegt absichtlich NICHT in /data, damit es nicht über Container-Neustarts persistiert.
+    for path in ("/tmp/sbfspot_container_started_at", "/run/sbfspot_container_started_at"):
+        try:
+            if os.path.exists(path):
+                text = open(path, "r", encoding="utf-8").read().strip()
+                ts = _parse_ts(text)
+                if ts:
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    return ts.astimezone(timezone.utc)
+        except Exception:
+            pass
+    return None
+
+def _container_started_at():
+    """Return container start time.
+
+    Primär nutzen wir die Datei, die entrypoint.sh bei jedem echten Docker-Start
+    nach /tmp schreibt. Das ist zuverlässiger als /data, weil /data persistent ist,
+    und zuverlässiger als reine Python-Prozesszeit, weil der Webprozess neu starten kann.
+    Falls die Datei fehlt, fallback auf /proc/1/stat und zuletzt auf Prozessstart.
     """
+    start_from_file = _start_time_from_file()
+    if start_from_file:
+        return start_from_file
+
     try:
+        boot_time = None
         with open("/proc/stat", "r", encoding="utf-8") as f:
-            boot_time = None
             for line in f:
                 if line.startswith("btime "):
                     boot_time = int(line.split()[1])
@@ -99,10 +120,9 @@ def _container_started_at():
         with open("/proc/1/stat", "r", encoding="utf-8") as f:
             stat = f.read().strip()
 
-        # comm kann Leerzeichen/Klammern enthalten, deshalb nach dem letzten ')' splitten.
         after_comm = stat.rsplit(")", 1)[1].strip().split()
-        start_ticks = int(after_comm[19])  # Feld 22, nach Entfernen der ersten 2 Felder Index 19
-        ticks_per_second = os.sysconf(os.sysconf_names.get("SC_CLK_TCK", "SC_CLK_TCK"))
+        start_ticks = int(after_comm[19])
+        ticks_per_second = os.sysconf("SC_CLK_TCK")
 
         if boot_time and ticks_per_second:
             start_epoch = boot_time + (start_ticks / ticks_per_second)
