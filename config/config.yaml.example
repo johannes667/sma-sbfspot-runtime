@@ -1,5 +1,5 @@
 # ==========================================
-# SMA SBFspot Runtime v2.3.0
+# SMA SBFspot Runtime v2.6
 # ==========================================
 # Diese Datei ist die Docker-/App-Konfiguration.
 # Nicht in SBFspot.cfg einfügen.
@@ -46,3 +46,7 @@ forecast_solar:
   learning:
     enabled: true
     days: 14
+    target_days: 14
+    min_factor: 0.75
+    max_factor: 1.25
+    slow_alpha: 0.10
