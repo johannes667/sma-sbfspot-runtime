@@ -220,3 +220,26 @@ def history_status() -> Dict[str, Any]:
     except Exception as e:
         status["error"] = str(e)
         return status
+
+
+def energy_summary():
+    """Return current ISO week and calendar month yield."""
+    init_db()
+    with sqlite3.connect(DB_FILE) as con:
+        week = con.execute("""
+            SELECT COALESCE(SUM(day_energy),0) FROM (
+              SELECT DATE(ts) d, MAX(energy_today_kwh) day_energy
+              FROM samples
+              WHERE strftime('%Y-%W', ts)=strftime('%Y-%W','now','localtime')
+              GROUP BY DATE(ts)
+            )
+        """).fetchone()[0]
+        month = con.execute("""
+            SELECT COALESCE(SUM(day_energy),0) FROM (
+              SELECT DATE(ts) d, MAX(energy_today_kwh) day_energy
+              FROM samples
+              WHERE strftime('%Y-%m', ts)=strftime('%Y-%m','now','localtime')
+              GROUP BY DATE(ts)
+            )
+        """).fetchone()[0]
+    return {"week_kwh": round(float(week or 0),2), "month_kwh": round(float(month or 0),2)}

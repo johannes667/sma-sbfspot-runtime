@@ -13,7 +13,7 @@ from config import (
 )
 from forecast_solar import get_forecast
 from log_utils import clear_log, log_event, read_log_lines
-from storage import history, history_day, history_status, read_state
+from storage import history, history_day, history_status, read_state, energy_summary
 
 app = Flask(__name__, static_folder="/web/static", static_url_path="")
 
@@ -216,6 +216,11 @@ def api_status():
     return jsonify({"version": VERSION, "status": s.get("status"), "timestamp": s.get("timestamp"), "timestamp_display": _format_ts(s.get("timestamp")), "last_error": s.get("last_error", ""), **_runtime_meta(), "last_successful_update": s.get("last_sbfspot_success"), "last_successful_update_display": _format_ts(s.get("last_sbfspot_success")), "last_successful_update_age": _format_age(s.get("last_sbfspot_success"))})
 
 
+
+
+@app.route("/api/energy-summary")
+def api_energy_summary():
+    return jsonify(energy_summary())
 @app.route("/api/services")
 def api_services():
     return jsonify(service_status())
