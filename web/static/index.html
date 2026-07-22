@@ -6,7 +6,7 @@
   <title>SMA Runtime 2.6</title>
   <style>
     :root{--bg:#0f172a;--card:#1f2937;--card2:#111827;--line:#374151;--text:#e5e7eb;--muted:#9ca3af;--green:#22c55e;--yellow:#facc15;--red:#ef4444;--blue:#38bdf8}
-    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:22px}h1{font-size:24px;margin:0 0 6px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.status{color:var(--muted);margin-bottom:18px}.tabs{display:flex;gap:8px;margin:14px 0 18px;flex-wrap:wrap}.tab{background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:9px 13px;cursor:pointer}.tab.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}.label{color:var(--muted);font-size:15px}.value{font-size:34px;font-weight:800;margin-top:8px}.wide{grid-column:1/-1}canvas{width:100%;height:330px;background:var(--card2);border-radius:10px}.small{color:#cbd5e1;font-size:14px;line-height:1.5}.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}.dot{display:inline-block;width:18px;height:4px;border-radius:4px;margin-right:6px;vertical-align:middle}.green{background:var(--green)}.yellow{background:var(--yellow)}.service{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;border-top:1px solid var(--line);padding:12px 0}.service:first-child{border-top:0}.lamp{width:16px;height:16px;border-radius:50%;display:inline-block}.ok{background:var(--green)}.warn{background:var(--yellow)}.error{background:var(--red)}.disabled{background:#64748b}.badge{border:1px solid var(--line);border-radius:999px;padding:4px 9px;color:#cbd5e1;font-size:13px}.hidden{display:none}.btn{background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer;text-decoration:none;display:inline-block}.logbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.log{background:#020617;border:1px solid var(--line);border-radius:14px;padding:12px;white-space:pre-wrap;overflow:auto;max-height:560px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45}.li{display:block}.INFO{color:#cbd5e1}.WARNING,.WARN{color:#fde68a}.ERROR{color:#fecaca}.muted{color:var(--muted)}@media(max-width:700px){.grid{grid-template-columns:1fr}.value{font-size:30px}.service{grid-template-columns:28px 1fr}.service .badge{grid-column:2}}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:22px}h1{font-size:24px;margin:0 0 6px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.status{color:var(--muted);margin-bottom:18px}.tabs{display:flex;gap:8px;margin:14px 0 18px;flex-wrap:wrap}.tab{background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:9px 13px;cursor:pointer}.tab.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}.label{color:var(--muted);font-size:15px}.value{font-size:34px;font-weight:800;margin-top:8px}.wide{grid-column:1/-1}canvas{display:block;width:100%;height:330px;background:var(--card2);border-radius:10px}.small{color:#cbd5e1;font-size:14px;line-height:1.5}.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}.dot{display:inline-block;width:18px;height:4px;border-radius:4px;margin-right:6px;vertical-align:middle}.green{background:var(--green)}.yellow{background:var(--yellow)}.service{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;border-top:1px solid var(--line);padding:12px 0}.service:first-child{border-top:0}.lamp{width:16px;height:16px;border-radius:50%;display:inline-block}.ok{background:var(--green)}.warn{background:var(--yellow)}.error{background:var(--red)}.disabled{background:#64748b}.badge{border:1px solid var(--line);border-radius:999px;padding:4px 9px;color:#cbd5e1;font-size:13px}.hidden{display:none}.btn{background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer;text-decoration:none;display:inline-block}.logbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.log{background:#020617;border:1px solid var(--line);border-radius:14px;padding:12px;white-space:pre-wrap;overflow:auto;max-height:560px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45}.li{display:block}.INFO{color:#cbd5e1}.WARNING,.WARN{color:#fde68a}.ERROR{color:#fecaca}.muted{color:var(--muted)}@media(max-width:700px){.grid{grid-template-columns:1fr}.value{font-size:30px}.service{grid-template-columns:28px 1fr}.service .badge{grid-column:2}}
   </style>
 </head>
 <body>
@@ -31,7 +31,7 @@
   <div class="card"><div class="label">Wirkungsgrad</div><div class="value" id="eff">–</div></div>
   <div class="card"><div class="label">Container-Uptime</div><div class="value" id="uptime">–</div></div>
   <div class="card"><div class="label">Letztes erfolgreiches SBFspot-Update</div><div class="value" id="lastok">–</div></div>
-  <div class="card wide"><div class="label">Verlauf: PV Ist-Leistung + Forecast.Solar (persistente Tageshistorie)</div><br><canvas id="chart" width="900" height="360"></canvas><div class="legend"><span><span class="dot green"></span>Real</span><span><span class="dot yellow"></span>Forecast</span></div><p class="small" id="forecastInfo">–</p></div>
+  <div class="card wide"><div class="label">Verlauf: PV Ist-Leistung + Forecast.Solar (persistente Tageshistorie)</div><br><canvas id="chart"></canvas><div class="legend"><span><span class="dot green"></span>Real</span><span><span class="dot yellow"></span>Forecast</span></div><p class="small" id="forecastInfo">–</p></div>
 </div>
 </section>
 
@@ -41,7 +41,8 @@
 <script>
 const $=id=>document.getElementById(id);let active='dashboard';
 const numberDE=new Intl.NumberFormat('de-DE',{maximumFractionDigits:0});
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{active=b.dataset.view;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.view').forEach(v=>v.classList.toggle('hidden',v.id!==active)); if(active==='logs')loadLog(); if(active==='services')loadServices();});
+let lastHistory=[],lastForecast={};
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{active=b.dataset.view;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.view').forEach(v=>v.classList.toggle('hidden',v.id!==active)); if(active==='logs')loadLog(); if(active==='services')loadServices(); if(active==='dashboard')requestAnimationFrame(()=>draw(lastHistory,lastForecast));});
 function fmt(v,u,d=0){ if(v===undefined||v===null||v==='') return '–'; let n=Number(v); if(Number.isNaN(n)) return v; return n.toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d})+' '+u; }
 function dur(sec){ if(sec===undefined||sec===null)return'–'; sec=Number(sec); const d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60); return (d?d+' Tage ':'')+h+' Std '+m+' Min'; }
 function ageText(ts){ const d=parseLocalTs(ts); if(!d || isNaN(d.getTime())) return 'Noch kein OK'; const diff=Math.max(0, Math.floor((Date.now()-d.getTime())/1000)); const m=Math.floor(diff/60), h=Math.floor(m/60), days=Math.floor(h/24); if(diff<60)return 'gerade eben'; if(m<60)return 'vor '+m+' Min'; if(h<24)return 'vor '+h+' Std '+(m%60)+' Min'; return days+' Tage alt'; }
@@ -54,18 +55,34 @@ function todayIso(){ const d=new Date(); return d.getFullYear()+'-'+String(d.get
 function forecastPoints(forecast){ const watts=forecast.watts_corrected||forecast.watts||{},day=todayIso(); return Object.entries(watts).filter(([ts])=>String(ts).startsWith(day)).map(([ts,v])=>({x:tsHour(ts),f:Number(v||0)})); }
 function niceScaleMax(value){ const raw=Math.max(1000,Number(value)||0); const magnitude=Math.pow(10,Math.floor(Math.log10(raw))); const normalized=raw/magnitude; const nice=normalized<=1?1:normalized<=2?2:normalized<=5?5:10; return nice*magnitude; }
 function draw(hist,forecast){
-  const c=$('chart'),ctx=c.getContext('2d');
-  ctx.clearRect(0,0,c.width,c.height);
+  const c=$('chart');
+  const rect=c.getBoundingClientRect();
+  if(rect.width<1||rect.height<1)return;
+
+  const dpr=Math.max(1,window.devicePixelRatio||1);
+  const width=Math.round(rect.width);
+  const height=Math.round(rect.height);
+  const pixelWidth=Math.round(width*dpr);
+  const pixelHeight=Math.round(height*dpr);
+
+  if(c.width!==pixelWidth||c.height!==pixelHeight){
+    c.width=pixelWidth;
+    c.height=pixelHeight;
+  }
+
+  const ctx=c.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,width,height);
 
   const left=78,right=18,top=12,bottom=48;
-  const w=c.width-left-right,h=c.height-top-bottom;
+  const w=width-left-right,h=height-top-bottom;
   const real=hist.filter(x=>x.ts).map(x=>({x:tsHour(x.ts),y:Number(x.power_w||0)}));
   const fc=forecastPoints(forecast||{});
   const max=niceScaleMax(Math.max(0,...real.map(p=>p.y),...fc.map(p=>p.f)));
 
   ctx.strokeStyle='#334155';
   ctx.lineWidth=1;
-  ctx.font='12px sans-serif';
+  ctx.font='12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.fillStyle='#94a3b8';
   ctx.textAlign='right';
   ctx.textBaseline='middle';
@@ -146,7 +163,9 @@ async function load(){
   const errors=(f.errors||[]).length?' · Fehler: '+f.errors.join(' | '):'';
   $('forecastInfo').textContent='Forecast: '+dateText(s.forecast_updated_at||f.updated_at)+' · Faktor: '+(s.forecast_learning_factor||f.learning_factor||1)+' · '+(s.forecast_learning_status||f.learning_status||('Lerntage: '+(s.forecast_learning_days||f.learning_days||0)))+(arrays?' · '+arrays:'')+errors;
 
-  draw(h,f);
+  lastHistory=h;
+  lastForecast=f;
+  draw(lastHistory,lastForecast);
   if(active==='services'){renderServices(sv); renderHistoryStatus(sv.history||{});}
 }
 function renderServices(sv){ $('serviceList').innerHTML=(sv.services||[]).map(x=>`<div class="service"><span class="lamp ${x.status}"></span><div><b>${x.name}</b><div class="muted">${x.detail||''}</div></div><span class="badge">${x.last_ok||'–'}</span></div>`).join(''); }
@@ -154,6 +173,13 @@ function renderHistoryStatus(h){ $('historyStatus').innerHTML=`<div class="servi
 async function loadServices(){ const sv=await fetch('/api/services').then(r=>r.json()); renderServices(sv); renderHistoryStatus(sv.history||{}); }
 async function loadLog(){ const l=await fetch('/api/log?limit=500').then(r=>r.json()); $('log').innerHTML=(l.lines||[]).map(line=>{let cls=(line.match(/\[(INFO|WARNING|WARN|ERROR)\]/)||[])[1]||'INFO'; return `<span class="li ${cls}">${line.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</span>`}).join(''); $('log').scrollTop=$('log').scrollHeight; }
 async function clearLog(){ await fetch('/api/log/clear',{method:'POST'}); loadLog(); }
+
+let resizeTimer;
+window.addEventListener('resize',()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer=setTimeout(()=>draw(lastHistory,lastForecast),120);
+});
+
 load(); setInterval(load,30000); setInterval(()=>{if(active==='logs')loadLog()},10000);
 </script>
 </body>
