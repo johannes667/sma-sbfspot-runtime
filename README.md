@@ -151,3 +151,10 @@ Dann Container neu bauen/starten.
 - WebGUI zeigt jetzt Container-Uptime.
 - WebGUI zeigt das letzte erfolgreiche SBFspot-Update inklusive Altersanzeige.
 - Erfolgreiche SBFspot-Läufe werden persistent im State gespeichert.
+
+## Schlankes HAOS-Add-on
+
+Im Ordner [`sbfspot_mqtt`](sbfspot_mqtt) liegt ein eigenständiges Add-on für
+Home Assistant OS: SMA Bluetooth → MQTT, ohne Dashboard, Historie und Forecast.
+Messwerte werden nur bei Änderung veröffentlicht; SBFspot muss den Wechselrichter
+weiterhin abfragen. Installation und Optionen: [Add-on-Dokumentation](sbfspot_mqtt/DOCS.md).

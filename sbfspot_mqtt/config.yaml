@@ -1,0 +1,51 @@
+name: SMA SBFspot MQTT
+version: "1.0.0"
+slug: sbfspot_mqtt
+description: Schlanke SMA-Bluetooth-Auslesung mit MQTT nur bei Wertänderungen
+url: https://github.com/johannes667/sma-sbfspot-runtime
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+init: false
+host_network: true
+privileged:
+  - NET_ADMIN
+  - NET_RAW
+apparmor: false
+hassio_api: true
+services:
+  - mqtt:want
+options:
+  inverter_bluetooth_address: "00:00:00:00:00:00"
+  local_bluetooth_address: ""
+  inverter_password: "0000"
+  timezone: Europe/Berlin
+  poll_seconds: 30
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_tls: false
+  mqtt_base_topic: sma/sbfspot
+  discovery: true
+  discovery_prefix: homeassistant
+  device_id: sma_sbfspot
+  device_name: SMA Wechselrichter
+schema:
+  inverter_bluetooth_address: str
+  local_bluetooth_address: str?
+  inverter_password: password
+  timezone: str
+  poll_seconds: int(10,3600)
+  mqtt_host: str?
+  mqtt_port: port
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_tls: bool
+  mqtt_base_topic: str
+  discovery: bool
+  discovery_prefix: str
+  device_id: match(^[a-zA-Z0-9_-]+$)
+  device_name: str
