@@ -112,5 +112,88 @@ INFO: Done.
                 bridge.write_config({**OPTIONS, "inverter_password": "0000\nMQTT_Host=bad"}, "", target)
 
 
+class ResilienceTests(unittest.TestCase):
+    def test_only_received_sensor_values_refresh_their_age(self):
+        readings = bridge.Measurements(stale_after=180)
+        readings.update({"power_w": 100, "pac1_w": 100}, now=10)
+        readings.update({"power_w": 120}, now=100)
+        self.assertEqual(readings.fresh(189), {"power_w": 120, "pac1_w": 100})
+        self.assertEqual(readings.fresh(190), {"power_w": 120})
+        self.assertEqual(readings.fresh(280), {})
+
+    def test_error_does_not_refresh_or_overwrite_last_measurement(self):
+        readings = bridge.Measurements(stale_after=180)
+        readings.update({"power_w": 2400}, now=0)
+        readings.update({}, now=100)
+        self.assertEqual(readings.fresh(179), {"power_w": 2400})
+        self.assertEqual(readings.fresh(180), {})
+
+    def test_real_zero_is_not_filtered(self):
+        readings = bridge.Measurements(stale_after=180)
+        readings.update({"power_w": 2400}, now=0)
+        values = bridge.parse_output("SPOT_PACTOT: 0 (W)\nINFO: Done.")
+        readings.update(values, now=1)
+        self.assertEqual(readings.fresh(2), {"power_w": 0})
+
+    def test_partial_completed_measurement_remains_usable(self):
+        values = bridge.parse_output("SPOT_PACTOT: 1250 (W)\ngetSpotGridFrequency returned an error: -1\nINFO: Done.")
+        self.assertEqual(values, {"power_w": 1250})
+        self.assertNotIn("frequency_hz", values)
+
+    def test_failure_diagnosis_does_not_disclose_raw_output(self):
+        private = "Password=secret-value\n"
+        self.assertEqual(bridge.failure_reason(private + "Logon failed. Check 'USER' Password", 1),
+                         "Anmeldung: Wechselrichter-Passwort abgelehnt")
+        self.assertIn("Bluetooth", bridge.failure_reason(private + "bthConnect() returned -1", 1))
+        self.assertEqual(bridge.failure_reason(private + "getSpotGridFrequency returned an error: -1", 1),
+                         "SBFspot-Lesefehler: getSpotGridFrequency=-1")
+        self.assertNotIn("secret-value", bridge.failure_reason(private, 1))
+
+    def test_individual_sensor_expires_and_recovers_without_fake_state(self):
+        client = Client()
+        publisher = bridge.Publisher(client, OPTIONS)
+        publisher.connected.set()
+        publisher.send_values({"power_w": 100, "pac1_w": 100})
+        client.messages.clear()
+        publisher.send_values({"power_w": 120}, unavailable=["pac1_w"])
+        self.assertIn(("sma/sbfspot/pac1_w/availability", "offline"),
+                      [(t, p) for t, p, _ in client.messages])
+        self.assertFalse(any(t == "sma/sbfspot/pac1_w" for t, _, _ in client.messages))
+        client.messages.clear()
+        publisher.send_values({"power_w": 120, "pac1_w": 100})
+        self.assertIn(("sma/sbfspot/pac1_w/availability", "online"),
+                      [(t, p) for t, p, _ in client.messages])
+
+    def test_discovery_requires_bridge_and_sensor_availability(self):
+        client = Client()
+        publisher = bridge.Publisher(client, OPTIONS)
+        publisher.connected.set()
+        publisher.send_values({"power_w": 100})
+        payload = json.loads(next(p for t, p, _ in client.messages if t.endswith('/config')))
+        self.assertEqual(payload['availability_mode'], 'all')
+        self.assertEqual(payload['availability'], [{'topic': 'sma/sbfspot/availability'},
+                                                  {'topic': 'sma/sbfspot/power_w/availability'}])
+
+    def test_backoff_is_bounded_and_respects_long_configured_pause(self):
+        self.assertEqual([bridge.retry_pause(30, n) for n in (1, 2, 3, 4, 10)], [30, 60, 120, 240, 300])
+        self.assertEqual(bridge.retry_pause(600, 5), 600)
+
+    def test_inflight_query_services_mqtt_then_reaps_child_on_timeout(self):
+        from unittest.mock import Mock, patch
+        import subprocess
+        import threading
+        process = Mock()
+        process.communicate.side_effect = [subprocess.TimeoutExpired('SBFspot', 1), ('', '')]
+        process.poll.return_value = None
+        maintain = Mock()
+        with patch.object(bridge.subprocess, 'Popen', return_value=process), \
+             patch.object(bridge.time, 'monotonic', side_effect=[0, 0, 100]):
+            with self.assertRaisesRegex(ValueError, 'Zeitlimit'):
+                bridge.read_inverter('/data/SBFspot.cfg', threading.Event(), maintain)
+        maintain.assert_called_once()
+        process.kill.assert_called_once()
+        self.assertEqual(process.communicate.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

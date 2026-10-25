@@ -1,0 +1,18 @@
+--- a/SBFspot/SBFspot.cpp
++++ b/SBFspot/SBFspot.cpp
+@@ -2441,13 +2441,13 @@
+                             {
+                                 value64 = get_longlong(recptr + 8);
+                                 if (is_NaN(value64) || is_NaN((uint64_t)value64))
+-                                    value64 = 0;
++                                    continue; // Missing reading is not a measured zero.
+                             }
+                             else if ((dataType != DT_STRING) && (dataType != DT_STATUS))
+                             {
+                                 value = get_long(recptr + 16);
+                                 if (is_NaN(value) || is_NaN((uint32_t)value))
+-                                    value = 0;
++                                    continue; // Missing reading is not a measured zero.
+                             }
+ 
+                             switch (lri)

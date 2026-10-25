@@ -1,5 +1,5 @@
 name: SMA SBFspot MQTT
-version: "1.0.0"
+version: "1.1.0"
 slug: sbfspot_mqtt
 description: Schlanke SMA-Bluetooth-Auslesung mit MQTT nur bei Wertänderungen
 url: https://github.com/johannes667/sma-sbfspot-runtime
@@ -23,6 +23,9 @@ options:
   inverter_password: "0000"
   timezone: Europe/Berlin
   poll_seconds: 30
+  retry_seconds: 5
+  stale_after_seconds: 180
+  log_level: info
   mqtt_host: ""
   mqtt_port: 1883
   mqtt_username: ""
@@ -39,6 +42,9 @@ schema:
   inverter_password: password
   timezone: str
   poll_seconds: int(10,3600)
+  retry_seconds: int(1,60)
+  stale_after_seconds: int(30,7200)
+  log_level: list(info|debug)
   mqtt_host: str?
   mqtt_port: port
   mqtt_username: str?

@@ -10,6 +10,8 @@ RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export GIT_SSL_CAINFO=/run/secrets/proxy_ca; fi; \
     git init && git remote add origin https://github.com/SBFspot/SBFspot.git \
     && git fetch --depth 1 origin "$SBFSPOT_REF" && git checkout --detach FETCH_HEAD
+COPY sbfspot-valid-values.patch /src/valid-values.patch
+RUN git apply --check valid-values.patch && git apply valid-values.patch
 RUN make -C SBFspot nosql && strip SBFspot/nosql/bin/SBFspot
 
 FROM debian:bookworm-slim
