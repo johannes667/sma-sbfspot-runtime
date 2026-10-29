@@ -1,3 +1,13 @@
+# 1.2.0
+
+- Neue Datenquelle `webbox`: lesende SMA HTTP-RPC-Abfragen über LAN im selben Add-on.
+- Bluetooth bleibt Standard; LAN benötigt keine Bluetooth-Konfiguration oder -Prozesse.
+- Geräteerkennung, exakte Geräteauswahl, Kanal-/Einheitenprüfung und konfigurierbares Mapping.
+- Lesende Kanaldiagnose zur Verifikation gerätespezifischer Bluetooth-WebBox-Kanäle.
+- Mindestens 30 Sekunden zwischen sämtlichen RPC-Anfragen, Timeout und Wiederverbindung.
+- Gemeinsame MQTT-Logik mit stabilen Unique IDs, sensorweiser Alterung und Änderungserkennung.
+- Simulierte RPC-Tests; reale Bluetooth-WebBox-Kanäle bleiben bis Hardwarediagnose unbestätigt.
+
 # 1.1.0
 
 - Ungültige SMA-Rohwerte werden in SBFspot nicht mehr in 0-Messungen umgewandelt.

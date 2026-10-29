@@ -157,3 +157,168 @@ SBFspot steht unter CC BY-NC-SA 3.0; seine Lizenz wird im Image mitgeliefert.
 
 Der SBFspot-Build enthält seit Add-on-Version 1.1.0 die Änderung aus
 `sbfspot-valid-values.patch`, um ungültige SMA-Werte als fehlend zu behandeln.
+
+## Sunny WebBox mit Bluetooth über LAN (ab 1.2.0)
+
+Die Datenquelle ist umschaltbar. Ohne `source` bleibt das bisherige Bluetooth-
+Verhalten erhalten. Mit `source: webbox` spricht nur die WebBox per Bluetooth mit
+dem Wechselrichter; am HAOS-/Unraid-Host ist kein Bluetooth-Adapter erforderlich.
+Es startet weder SBFspot noch ein Bluetooth-Dienst. MQTT, Discovery, Retain,
+Änderungserkennung, Retry/Backoff und sensorweise Alterung werden gemeinsam genutzt.
+Es gibt keine zusätzlichen Python-Abhängigkeiten.
+
+```yaml
+source: webbox
+webbox_host: 192.168.2.100  # Beispiel: durch eigene LAN-Adresse ersetzen
+webbox_port: 80
+webbox_password: ""       # WebBox-Benutzerpasswort, nicht HTTP Basic Auth
+webbox_device_key: ""     # exakten Schlüssel aus Diagnose übernehmen
+webbox_timeout_seconds: 10
+webbox_diagnostics: false
+webbox_channels: []
+poll_seconds: 30
+stale_after_seconds: 180
+```
+
+Bluetooth-Adressen und `inverter_password` werden im LAN-Modus nicht ausgewertet
+und dürfen leer bleiben. `timezone` gilt weiterhin nur für SBFspot.
+`webbox_host` akzeptiert einen Hostnamen oder eine IPv4-Adresse ohne Schema/Pfad;
+IPv6 und HTTPS werden derzeit nicht unterstützt. Port und Timeout sind einstellbar
+(Timeout 1–60 Sekunden). Leeres Passwort lässt das optionale `passwd`-Feld weg;
+ansonsten wird der MD5-Hash des WebBox-Benutzerpassworts übertragen. Keine
+Installer-Zugangsdaten verwenden. HTTP bietet keine Transportverschlüsselung;
+die Verbindung gehört ins vertrauenswürdige lokale Netzwerk.
+
+### Verifiziertes Protokoll und bewusste Grenzen
+
+Primärquelle: [SMA Sunny WebBox RPC, Version 1.4](https://files.sma.de/downloads/SWebBoxRPC-BA-en-14.pdf),
+Kapitel 2.2, 4–7. HTTP POST an `/rpc`, JSON-Objekt im Body, RPC-Version `1.0`,
+`format: JSON`, korrelierte `id` und optionaler MD5-Hash in `passwd`.
+Kein JSON-RPC-2.0-Endpunkt und keine Basic-Auth-Anmeldung.
+
+`GetDevices` liefert die hierarchische Geräteliste. Ein konfigurierter Schlüssel
+wird exakt ausgewählt. Automatisch wird ausschließlich ein einzelner Schlüssel
+mit Präfix `SB` oder `WR` ausgewählt. Bei anderen Typkennungen oder mehreren
+Wechselrichtern muss `webbox_device_key` gesetzt werden; keine Summierung.
+`GetProcessData` fragt alle gelieferten Kanäle genau dieses Geräts ab und wertet
+`meta`, `value` und `unit` aus. Keine Schreibprozeduren sind zugelassen.
+
+`GetPlantOverview` ist dokumentiert, liefert jedoch Anlagenwerte. Deshalb wird
+es nicht für bestehende Wechselrichter-Entitäten verwendet. `GetProcessDataChannels`
+ist ebenfalls dokumentiert, aber das SMA-Beispiel verwendet abweichend
+`GetProDataChannels`. Die Diagnose benötigt diese uneindeutige Prozedur nicht:
+`GetProcessData` ohne Kanalauswahl liefert bereits Metanamen, Einheiten und Werte.
+
+SMA empfiehlt mindestens 30 Sekunden **zwischen zwei RPC-Anfragen** (Kapitel 4.3).
+Das gilt hier auch zwischen Geräteerkennung und Messabfrage, Diagnoseaufrufen und
+Fehlversuchen. `poll_seconds` muss im WebBox-Modus mindestens 30 sein; der
+Bluetooth-Modus behält sein Minimum von 10. Nach einer abgeschlossenen Messung
+wird das konfigurierte Intervall gewartet. Die Erkennung benötigt beim ersten
+Start somit zusätzlich mindestens 30 Sekunden. Keine parallelen RPC-Abfragen;
+die MQTT-/Alterungsprüfung läuft während Abfragen und Wartezeiten weiter.
+Wiederholungen im WebBox-Modus frühestens nach 30 Sekunden, danach begrenzter
+Backoff wie bisher. Andere RPC-Clients während des Tests beenden.
+
+### Tatsächlich unterstützte Messwerte
+
+Die RPC-Dokumentation enthält ausdrücklich **keine Beispielantwort der
+Bluetooth-WebBox**. Deshalb sind nur drei eindeutig dokumentierte Prozesskanäle
+vorbelegt. Auch sie werden ausschließlich bei tatsächlich geliefertem Metanamen,
+gültigem Zahlenwert und passender Einheit veröffentlicht:
+
+| Sensor / bisherige MQTT-Kennung | Vorbelegter Metaname | HA-Einheit |
+| --- | --- | --- |
+| AC-Gesamtleistung `power_w` | `Pac` | W |
+| Gesamtertrag `energy_total_kwh` | `E-Total` | kWh |
+| Netzfrequenz `frequency_hz` | `Fac` | Hz |
+
+**Für die konkrete Bluetooth-WebBox bleiben alle Kanalnamen und ihre tatsächliche
+Verfügbarkeit bis zur Diagnose unbestätigt.** Die folgenden bestehenden Sensoren
+sind über explizites Mapping verwendbar, sobald der reale Kanal und seine
+Bedeutung nachgewiesen sind:
+
+| Messgröße | Sensor-Kennung | Ziel-Einheit |
+| --- | --- | --- |
+| Tagesertrag | `energy_today_kwh` | kWh |
+| DC-Leistung String 1/2 | `pdc1_w`, `pdc2_w` | W |
+| DC-Spannung String 1/2 | `dc_voltage_1_v`, `dc_voltage_2_v` | V |
+| DC-Strom String 1/2 | `dc_current_1_a`, `dc_current_2_a` | A |
+| AC-Leistung Phase 1/2/3 | `pac1_w`, `pac2_w`, `pac3_w` | W |
+| AC-Spannung Phase 1/2/3 | `ac_voltage_1_v` bis `ac_voltage_3_v` | V |
+| AC-Strom Phase 1/2/3 | `ac_current_1_a` bis `ac_current_3_a` | A |
+| Temperatur | `temperature_c` | °C |
+| Betriebs-/Einspeisestunden | `operation_time_h`, `feed_in_time_h` | h |
+
+`webbox_channels` ist eine Liste von Objekten mit `sensor` (Kennung oben) und
+`channel` (exakter, bestätigter `meta`-Wert aus der Diagnose). Ein Eintrag ersetzt
+für diesen Sensor die Vorbelegung. Ein Kanal darf nicht mehreren Sensoren
+zugewiesen werden. Keine Zuordnung anhand übersetzter Anzeigenamen, kein Raten
+von Phasen oder Strings und keine Berechnung fehlender DC-Leistung aus U × I.
+
+Umrechnung ausschließlich anhand der gelieferten Einheit: W/kW → W,
+Wh/kWh/MWh → kWh, V/mV → V, A/mA → A, s/h → h; Hz und °C unverändert.
+Fehlende/unbekannte Einheiten, doppelte Metanamen, ungültige Werte und SMA-
+Fehlwertmarkierungen werden verworfen. Punkt ist das RPC-Dezimalzeichen.
+Fehlende Werte erzeugen weder Discovery noch einen Nullzustand. Bereits bekannte,
+später fehlende Sensoren laufen individuell ab und bleiben als unavailable erhalten.
+Beim Quellenwechsel bleiben Topic und Unique ID `<device_id>_<sensor>` identisch.
+`device_id`, `mqtt_base_topic` und `discovery_prefix` deshalb beibehalten.
+
+Beide Energiezähler behalten `device_class: energy`, `state_class: total_increasing`
+und kWh. Für das Energy Dashboard vorzugsweise den echten Gesamtertragszähler
+als Solarproduktion wählen. Tageszähler nur bei bestätigtem Tagesreset mappen;
+kein Ableiten aus dem Gesamtzähler, kein künstliches Zurücksetzen. Vor dem Wechsel
+prüfen, dass WebBox und Bluetooth denselben Wechselrichter/Zähler abbilden.
+
+### Sichere Diagnose und Test in Home Assistant
+
+1. Add-on stoppen, mindestens 30 Sekunden seit der letzten WebBox-RPC-Anfrage
+   warten. Obige LAN-Konfiguration mit `webbox_diagnostics: true` speichern.
+2. Add-on starten. Es liest einmal `GetDevices`, gibt nur die Geräteschlüssel
+   im Protokoll aus und beendet sich ohne MQTT-Veröffentlichung.
+3. Den Schlüssel des Sunny Boy unter `webbox_device_key` eintragen. Wieder
+   mindestens 30 Sekunden warten und starten. Die Diagnose liest Geräte und
+   anschließend alle Prozesskanäle des gewählten Geräts. Sie zeigt `meta`,
+   `name`, `value`, `unit` und die bereits zugeordneten Messwerte.
+4. Zur Zuordnung diese Kanalliste sowie Wechselrichtermodell und WebBox-Firmware
+   liefern. Seriennummern/Geräteschlüssel dürfen konsistent anonymisiert werden;
+   Kanalnamen, Werte und Einheiten unverändert lassen. **Keine options.json,
+   Passwörter, Passwort-Hashes oder vollständigen Request-Dumps teilen.**
+   Falls eine Kanalbedeutung unklar bleibt, zusätzlich die Kanalbeschreibung
+   aus der SMA-Messwerte-Dokumentation des konkreten Wechselrichters liefern.
+5. Bestätigte Zuordnungen als `webbox_channels` eintragen, Diagnose auf `false`
+   setzen, mindestens 30 Sekunden warten und Add-on normal starten. Alternativ
+   ist die Diagnose im Container mit `python3 /app/bridge.py --diagnose-webbox`
+   verfügbar; niemals neben dem laufenden Collector ausführen.
+6. In **Einstellungen → Geräte & Dienste → MQTT** Sensoren prüfen. Mit
+   `log_level: debug` RPC-Status, Antwortdauer und Anzahl gültiger Messwerte
+   prüfen; keine Passwort-/Hash-Ausgaben. MQTT-Topics und vorhandene Unique IDs
+   mit dem bisherigen Betrieb vergleichen. Bei unveränderten Werten erfolgen
+   keine wiederholten State-Nachrichten.
+7. WebBox-LAN trennen: nach `stale_after_seconds` müssen Sensoren unavailable
+   werden, ohne neue 0-Werte. Wieder verbinden: automatische Erholung abwarten.
+   Auch einen einzelnen fehlenden Kanal prüfen; andere Sensoren bleiben gültig.
+8. Für den Rückwechsel `source: bluetooth` sowie gültige bisherige Bluetooth-
+   Optionen setzen. `webbox_diagnostics` wird dabei ignoriert.
+
+Die Stale-Erkennung misst die Zeit seit der letzten gültigen RPC-Lieferung.
+Das dokumentierte Kanalobjekt enthält keinen Messzeitstempel. Wiederholt eine
+WebBox intern eingefrorene Cache-Werte mit gültigen Antworten, kann die Bridge
+das nicht von konstanten Messungen unterscheiden. Das Erfassungsintervall und
+den Bluetooth-Verbindungsstatus der WebBox zusätzlich prüfen. Ein Intervall
+von 30 Sekunden garantiert keine neuen Wechselrichtermessungen alle 30 Sekunden.
+
+### Rechte und Verifikation
+
+HAOS-Containerrechte gelten statisch für das gesamte Add-on und lassen sich nicht
+per Laufzeitoption umschalten. `host_network`, `NET_ADMIN`, `NET_RAW` und das
+bestehende AppArmor-Verhalten bleiben für Bluetooth-Kompatibilität erhalten.
+Der LAN-Code benötigt diese Sonderrechte nicht und verwendet sie nicht; auf einem
+separat gepflegten lokalen LAN-only-Build können sie entfernt werden. Dieses
+Update erstellt kein zweites Add-on und ändert die Rechte bestehender Installationen
+nicht. Das gemeinsame Image enthält weiterhin SBFspot für den Quellenwechsel.
+
+Automatisierte Prüfung: `python3 -m unittest discover -s tests -v` im Repository.
+Die WebBox-Tests verwenden simulierte dokumentierte RPC-Antworten, keine reale
+Bluetooth-WebBox-Aufzeichnung. Ein Hardwaretest und ein HAOS-Image-Build bleiben
+vor produktiver Freigabe erforderlich.

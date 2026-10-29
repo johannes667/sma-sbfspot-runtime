@@ -158,3 +158,12 @@ Im Ordner [`sbfspot_mqtt`](sbfspot_mqtt) liegt ein eigenständiges Add-on für
 Home Assistant OS: SMA Bluetooth → MQTT, ohne Dashboard, Historie und Forecast.
 Messwerte werden nur bei Änderung veröffentlicht; SBFspot muss den Wechselrichter
 weiterhin abfragen. Installation und Optionen: [Add-on-Dokumentation](sbfspot_mqtt/DOCS.md).
+
+## HAOS: Sunny WebBox über LAN
+
+Das bestehende Add-on `sbfspot_mqtt` unterstützt ab 1.2.0 neben direktem Bluetooth
+auch `source: webbox` mit HTTP-RPC über LAN. MQTT-Topics und Unique IDs bleiben
+erhalten. Die WebBox übernimmt die Bluetooth-Verbindung zum Wechselrichter.
+Kanaldiagnose, Konfiguration, Energy Dashboard und Hardwaretest:
+[sbfspot_mqtt/DOCS.md](sbfspot_mqtt/DOCS.md#sunny-webbox-mit-bluetooth-über-lan-ab-120).
+Die eigenständige Docker-Anwendung im Repository ist von dieser Erweiterung unberührt.
