@@ -29,3 +29,11 @@ acknowledgements and keepalive. It takes about one minute and verifies:
 The C++ validity patch is checked and compiled during the image build. These tests
 do not establish compatibility with a particular Bluetooth adapter, the actual SMA
 radio link, HAOS Supervisor or the aarch64 target.
+
+WebBox LAN unit tests (`test_webbox.py`) simulate documented RPC envelopes and
+cover discovery, device selection, units, absent/invalid values, HTTP/RPC/network
+errors, timeouts, minimum request spacing, read-only procedures, MQTT identity
+compatibility, energy metadata, availability expiry/recovery, diagnostics and
+source selection without Bluetooth setup. These are not real Bluetooth-WebBox
+recordings; obtain the device-specific channels using `webbox_diagnostics: true`
+as described in the add-on DOCS.md before claiming hardware compatibility.
