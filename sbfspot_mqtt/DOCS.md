@@ -192,7 +192,7 @@ die Verbindung gehört ins vertrauenswürdige lokale Netzwerk.
 ### Verifiziertes Protokoll und bewusste Grenzen
 
 Primärquelle: [SMA Sunny WebBox RPC, Version 1.4](https://files.sma.de/downloads/SWebBoxRPC-BA-en-14.pdf),
-Kapitel 2.2, 4–7. HTTP POST an `/rpc`, JSON-Objekt im Body, RPC-Version `1.0`,
+Kapitel 2.2, 4–7. HTTP POST an `/rpc`, `RPC=` gefolgt vom JSON-Objekt im Body, RPC-Version `1.0`,
 `format: JSON`, korrelierte `id` und optionaler MD5-Hash in `passwd`.
 Kein JSON-RPC-2.0-Endpunkt und keine Basic-Auth-Anmeldung.
 
@@ -331,3 +331,19 @@ Diese Zeile ohne Konfigurationsdatei weitergeben. Version 1.2.0 meldete hier
 lediglich `Start fehlgeschlagen (WebBoxError)`; das genügt nicht zur Diagnose.
 Eine RPC-Fehlermeldung kann auf ein benötigtes WebBox-Benutzerpasswort hinweisen,
 beweist jedoch keine Passwortablehnung. Keine Zugangsdaten ins Protokoll kopieren.
+
+### HTTP-Transportkorrektur ab 1.2.2
+
+Der POST-Body lautet `RPC={...}` und wird als
+`application/x-www-form-urlencoded` gesendet. Versionen 1.2.0/1.2.1 sendeten
+lediglich JSON ohne diese Hülle. Die Korrektur folgt der praktischen
+[HTTP-Implementierung SunnyWebBoxHTTP](https://github.com/ravz/SunnyWebBox/blob/master/SunnyWebBox.py).
+Ein lokaler HTTP-Servertest prüft den tatsächlich übertragenen Request und die
+Antwortzuordnung. Der Test ersetzt keinen Test an der realen WebBox.
+
+Die [HA-sma-WebBox-Integration](https://github.com/jpcornil-git/HA-sma/blob/main/custom_components/sma_webbox/sma_webbox.py)
+nutzt dagegen UDP (Port 34268) und sendet bei ihren lesenden RPC-Anfragen kein
+Passwortfeld. Eine funktionierende passwortlose Integration beweist deshalb
+noch nicht die Erreichbarkeit des HTTP-Endpunkts. Das Add-on bleibt bei HTTP;
+`webbox_port` nicht auf den UDP-Port umstellen. Wenn ohne Passwort gelesen
+werden kann, `webbox_password: ""` beibehalten. Kein Standardpasswort wird geraten.

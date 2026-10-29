@@ -22,7 +22,8 @@ class WebBoxTests(unittest.TestCase):
         self.stop.wait.return_value = False
 
     def response(self, request, **kwargs):
-        payload = json.loads(request.data)
+        self.assertTrue(request.data.startswith(b'RPC={'))
+        payload = json.loads(request.data[4:])
         self.requests.append(payload)
         result = self.results.pop(0)
         response = Mock()
@@ -52,6 +53,45 @@ class WebBoxTests(unittest.TestCase):
         self.assertEqual(args[0].method, 'POST')
         self.assertEqual(kwargs['timeout'], 10)
         self.assertGreater(self.stop.wait.call_args.args[0], 29)
+
+    def test_http_wire_request_without_password(self):
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        received = []
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                raw = self.rfile.read(int(self.headers['Content-Length']))
+                received.append((self.path, self.headers['Content-Type'], raw))
+                if not raw.startswith(b'RPC={'):
+                    self.send_error(400)
+                    return
+                payload = json.loads(raw[4:])
+                body = json.dumps({'version': '1.0', 'proc': payload['proc'],
+                                   'id': payload['id'], 'result': {'devices': []}}).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *args):
+                pass
+        try:
+            server = HTTPServer(('127.0.0.1', 0), Handler)
+        except PermissionError:
+            self.skipTest('Execution sandbox prohibits loopback sockets; exercised in CI')
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            box = bridge.WebBox({**WB_OPTIONS, 'webbox_password': ''})
+            box.url = f'http://127.0.0.1:{server.server_port}/rpc'
+            self.assertEqual(box.rpc('GetDevices', None, threading.Event()), {'devices': []})
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
+        self.assertEqual(received[0][:2], ('/rpc', 'application/x-www-form-urlencoded'))
+        payload = json.loads(received[0][2][4:])
+        self.assertNotIn('passwd', payload)
+        self.assertNotIn('Authorization', payload)
 
     def test_no_implicit_multi_inverter_selection(self):
         self.simulate([{'devices': [{'key': 'SB:1'}, {'key': 'SB:2'}]}])
