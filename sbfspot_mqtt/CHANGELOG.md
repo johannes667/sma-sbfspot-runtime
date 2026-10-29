@@ -1,3 +1,9 @@
+# 1.2.1
+
+- WebBox-Diagnose zeigt die konkrete bereinigte Fehlerursache beim Start
+  (HTTP-Status, RPC-Fehler, Zeitlimit oder Netzwerkfehler).
+- Fremde Exception-Texte, RPC-Antworten und Zugangsdaten bleiben verborgen.
+
 # 1.2.0
 
 - Neue Datenquelle `webbox`: lesende SMA HTTP-RPC-Abfragen über LAN im selben Add-on.
