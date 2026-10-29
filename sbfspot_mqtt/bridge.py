@@ -597,6 +597,15 @@ def main():
         client.loop_stop()
 
 
+def log_start_failure(error):
+    # Only WebBoxError contains our own fixed, sanitized messages. Never log
+    # arbitrary exception text (options, HTTP responses or passwords).
+    if isinstance(error, WebBoxError):
+        LOG.error("WebBox-Start fehlgeschlagen: %s", error)
+    else:
+        LOG.error("Start fehlgeschlagen (%s). Add-on- und MQTT-Konfiguration prüfen.", type(error).__name__)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
@@ -607,5 +616,5 @@ if __name__ == "__main__":
         else:
             main()
     except Exception as error:
-        LOG.error("Start fehlgeschlagen (%s). Add-on- und MQTT-Konfiguration prüfen.", type(error).__name__)
+        log_start_failure(error)
         raise SystemExit(1)

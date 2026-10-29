@@ -322,3 +322,12 @@ Automatisierte Prüfung: `python3 -m unittest discover -s tests -v` im Repositor
 Die WebBox-Tests verwenden simulierte dokumentierte RPC-Antworten, keine reale
 Bluetooth-WebBox-Aufzeichnung. Ein Hardwaretest und ein HAOS-Image-Build bleiben
 vor produktiver Freigabe erforderlich.
+
+### Fehler beim Diagnosestart
+
+Ab 1.2.1 zeigt `WebBox-Start fehlgeschlagen: ...` die bereinigte Ursache:
+HTTP-Status, RPC-Fehler, Zeitlimit, Netzwerkfehler oder unerwartetes Antwortformat.
+Diese Zeile ohne Konfigurationsdatei weitergeben. Version 1.2.0 meldete hier
+lediglich `Start fehlgeschlagen (WebBoxError)`; das genügt nicht zur Diagnose.
+Eine RPC-Fehlermeldung kann auf ein benötigtes WebBox-Benutzerpasswort hinweisen,
+beweist jedoch keine Passwortablehnung. Keine Zugangsdaten ins Protokoll kopieren.

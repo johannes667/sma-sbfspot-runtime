@@ -158,6 +158,16 @@ class WebBoxTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bridge.configure_source({**WB_OPTIONS, 'poll_seconds': 10})
 
+    def test_start_failure_reports_only_sanitized_webbox_details(self):
+        with self.assertLogs(bridge.LOG, level='ERROR') as logs:
+            bridge.log_start_failure(bridge.WebBoxError('HTTP-Fehler 503'))
+        self.assertIn('WebBox-Start fehlgeschlagen: HTTP-Fehler 503', logs.output[0])
+        for error in (ValueError('private-password'), OSError('private-password')):
+            with self.assertLogs(bridge.LOG, level='ERROR') as logs:
+                bridge.log_start_failure(error)
+            self.assertIn(type(error).__name__, logs.output[0])
+            self.assertNotIn('private-password', logs.output[0])
+
     def test_diagnostic_mode_does_not_start_normal_collector(self):
         with patch.object(bridge.Path, 'read_text', return_value=json.dumps({
                 **WB_OPTIONS, 'webbox_diagnostics': True})), \
