@@ -1,3 +1,9 @@
+# 1.2.2
+
+- HTTP-RPC-Transport korrigiert: POST-Body verwendet die WebBox-Hülle `RPC={...}`.
+- Leeres WebBox-Passwort sendet weiterhin kein `passwd`-Feld; keine geratenen Zugangsdaten.
+- HTTP-Test mit lokalem simuliertem WebBox-Server prüft den tatsächlichen Request.
+
 # 1.2.1
 
 - WebBox-Diagnose zeigt die konkrete bereinigte Fehlerursache beim Start

@@ -1,5 +1,5 @@
 name: SMA SBFspot MQTT
-version: "1.2.1"
+version: "1.2.2"
 slug: sbfspot_mqtt
 description: SMA über Bluetooth oder Sunny WebBox LAN mit MQTT bei Wertänderungen
 url: https://github.com/johannes667/sma-sbfspot-runtime

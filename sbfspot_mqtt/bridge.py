@@ -162,8 +162,10 @@ class WebBox:
             payload["params"] = params
         if self.password_hash:
             payload["passwd"] = self.password_hash
-        request = Request(self.url, data=json.dumps(payload).encode("utf-8"),
-                          headers={"Content-Type": "application/json"}, method="POST")
+        # WebBox HTTP transport wraps the serialized RPC object with RPC=.
+        # See SunnyWebBoxHTTP._rpc in github.com/ravz/SunnyWebBox.
+        request = Request(self.url, data=("RPC=" + json.dumps(payload)).encode("utf-8"),
+                          headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
         started = time.monotonic()
         status = "error"
         try:
