@@ -1,7 +1,7 @@
 name: SMA SBFspot MQTT
-version: "1.2.2"
+version: "1.3.0"
 slug: sbfspot_mqtt
-description: SMA über Bluetooth oder Sunny WebBox LAN mit MQTT bei Wertänderungen
+description: Schlanke SMA-Bluetooth-Auslesung mit MQTT nur bei Wertänderungen
 url: https://github.com/johannes667/sma-sbfspot-runtime
 arch:
   - amd64
@@ -10,22 +10,11 @@ startup: services
 boot: auto
 init: false
 host_network: true
-privileged:
-  - NET_ADMIN
-  - NET_RAW
-apparmor: false
+apparmor: true
 hassio_api: true
 services:
   - mqtt:want
 options:
-  source: bluetooth
-  webbox_host: ""
-  webbox_port: 80
-  webbox_password: ""
-  webbox_device_key: ""
-  webbox_timeout_seconds: 10
-  webbox_diagnostics: false
-  webbox_channels: []
   inverter_bluetooth_address: "00:00:00:00:00:00"
   local_bluetooth_address: ""
   inverter_password: "0000"
@@ -45,19 +34,9 @@ options:
   device_id: sma_sbfspot
   device_name: SMA Wechselrichter
 schema:
-  source: list(bluetooth|webbox)
-  webbox_host: str?
-  webbox_port: port
-  webbox_password: password?
-  webbox_device_key: str?
-  webbox_timeout_seconds: int(1,60)
-  webbox_diagnostics: bool
-  webbox_channels:
-    - sensor: str
-      channel: str
-  inverter_bluetooth_address: str?
+  inverter_bluetooth_address: str
   local_bluetooth_address: str?
-  inverter_password: password?
+  inverter_password: password
   timezone: str
   poll_seconds: int(10,3600)
   retry_seconds: int(1,60)

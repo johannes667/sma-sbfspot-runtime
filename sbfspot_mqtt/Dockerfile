@@ -15,7 +15,6 @@ RUN git apply --check valid-values.patch && git apply valid-values.patch
 RUN make -C SBFspot nosql && strip SBFspot/nosql/bin/SBFspot
 
 FROM debian:bookworm-slim
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libbluetooth3 libboost-date-time1.74.0 libboost-system1.74.0 \
     python3 python3-paho-mqtt ca-certificates tzdata \
@@ -27,4 +26,4 @@ COPY --from=builder /src/SBFspot/SBFspot.cfg /usr/local/share/SBFspot.default.cf
 COPY --from=builder /src/license.md /usr/local/share/SBFspot.LICENSE
 COPY bridge.py /app/bridge.py
 WORKDIR /usr/local/bin
-ENTRYPOINT ["python3", "/app/bridge.py"]
+ENTRYPOINT ["python3", "-I", "-u", "-B", "/app/bridge.py"]

@@ -195,5 +195,135 @@ class ResilienceTests(unittest.TestCase):
         self.assertEqual(process.communicate.call_count, 2)
 
 
+class SecurityAndUpgradeTests(unittest.TestCase):
+    def test_all_discovery_payloads_match_1_2_2_with_existing_user_device_id(self):
+        import hashlib
+        client = Client()
+        publisher = bridge.Publisher(client, {**OPTIONS, 'device_id': 'sma_sbfspot_amann',
+                                             'device_name': 'SMA Wechselrichter Amann'})
+        publisher.connected.set()
+        publisher.send_values(dict.fromkeys(bridge.SENSORS, 1))
+        payloads = {t: json.loads(v) for t, v, _ in client.messages if t.endswith('/config')}
+        self.assertEqual(len(payloads), 22)
+        fingerprint = hashlib.sha256(json.dumps(payloads, sort_keys=True).encode()).hexdigest()
+        # Frozen from version 1.2.2 before removing WebBox. Covers all payloads,
+        # including identifiers, unique IDs, topics, units, classes/availability.
+        self.assertEqual(fingerprint, "ee3fc53ef343db1bdc2b6c313bd2653a01b9aa74e9a395b72ea52eb27c4c9333")
+
+    def test_secret_file_replacement_repairs_permissions_and_ignores_target_symlink(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / 'SBFspot.cfg'
+            target.write_text('old secret')
+            target.chmod(0o644)
+            bridge.write_config(OPTIONS, '', target)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+            victim = Path(folder) / 'unrelated'
+            victim.write_text('preserve me')
+            target.unlink()
+            target.symlink_to(victim)
+            bridge.write_config(OPTIONS, '', target)
+            self.assertFalse(target.is_symlink())
+            self.assertEqual(victim.read_text(), 'preserve me')
+            self.assertIn('User=user', target.read_text())
+
+    def test_failed_secret_replacement_preserves_config_and_removes_temporary_file(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / 'SBFspot.cfg'
+            target.write_text('old secret')
+            with patch.object(bridge.os, 'replace', side_effect=OSError('private-password')):
+                with self.assertRaises(OSError):
+                    bridge.write_config(OPTIONS, '', target)
+            self.assertEqual(target.read_text(), 'old secret')
+            self.assertEqual(list(Path(folder).iterdir()), [target])
+
+    def test_configuration_validation_rejects_injection_and_invalid_types(self):
+        good = {**OPTIONS, 'poll_seconds': 30, 'retry_seconds': 5,
+                'stale_after_seconds': 180, 'mqtt_port': 1883, 'mqtt_tls': False}
+        bridge.validate_options(good)
+        for update in ({'mqtt_base_topic': 'sma/#'}, {'discovery_prefix': 'ha\nsecret'},
+                       {'mqtt_base_topic': '\ud800'}, {'device_id': 'bad/id'},
+                       {'poll_seconds': 0}, {'retry_seconds': True}, {'mqtt_port': 65536},
+                       {'stale_after_seconds': 20}, {'timezone': '/private-password'},
+                       {'mqtt_tls': 'false'}, {'log_level': 'private-password'}):
+            with self.subTest(update=update), self.assertRaises(bridge.BridgeError) as raised:
+                bridge.validate_options({**good, **update})
+            self.assertNotIn('private-password', str(raised.exception))
+
+    def test_supervisor_http_errors_never_log_remote_response_or_token(self):
+        from unittest.mock import Mock, patch
+        from urllib.error import URLError
+        with patch.dict(bridge.os.environ, {'SUPERVISOR_TOKEN': 'private-token'}):
+            with patch.object(bridge, 'build_opener') as factory:
+                factory.return_value.open.side_effect = URLError('private-password')
+                with self.assertRaises(bridge.BridgeError) as raised:
+                    bridge.broker_settings({})
+                self.assertNotIn('private', str(raised.exception))
+                request = factory.return_value.open.call_args.args[0]
+                self.assertEqual(request.full_url, 'http://supervisor/services/mqtt')
+            for raw in (b'[]', b'invalid', b'{"result":"ok","data":{"host":"bad/path"}}', b'x' * 65537):
+                response = Mock()
+                response.__enter__ = Mock(return_value=response)
+                response.__exit__ = Mock(return_value=False)
+                response.read.return_value = raw
+                with self.subTest(raw=raw[:60]), patch.object(bridge, 'build_opener') as factory:
+                    factory.return_value.open.return_value = response
+                    with self.assertRaises(bridge.BridgeError):
+                        bridge.broker_settings({})
+
+    def test_supervisor_success_and_manual_broker_preserve_auth_and_tls(self):
+        from unittest.mock import Mock, patch
+        broker = {'host': 'mqtt.example.test', 'port': 8883, 'username': 'user',
+                  'password': 'private-password', 'ssl': True}
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = json.dumps({'result': 'ok', 'data': broker}).encode()
+        with patch.dict(bridge.os.environ, {'SUPERVISOR_TOKEN': 'private-token'}), \
+             patch.object(bridge, 'build_opener') as factory:
+            factory.return_value.open.return_value = response
+            self.assertEqual(bridge.broker_settings({}), broker)
+        with patch.object(bridge, 'build_opener') as factory:
+            self.assertEqual(bridge.broker_settings({'mqtt_host': broker['host'],
+                'mqtt_port': 8883, 'mqtt_username': 'user', 'mqtt_password': 'private-password',
+                'mqtt_tls': True}), broker)
+            factory.assert_not_called()
+
+    def test_supervisor_redirects_are_rejected(self):
+        self.assertIsNone(bridge.NoRedirect().redirect_request(None, None, 302, '', {},
+                                                            'http://untrusted.test'))
+
+    def test_child_environment_excludes_supervisor_credentials_and_uses_no_shell(self):
+        import threading
+        from unittest.mock import Mock, patch
+        process = Mock()
+        process.communicate.return_value = ('INFO: Done.', '')
+        process.returncode = 0
+        process.poll.return_value = 0
+        with patch.dict(bridge.os.environ, {'SUPERVISOR_TOKEN': 'private-token', 'HASSIO_TOKEN': 'private-token'}), \
+             patch.object(bridge.subprocess, 'Popen', return_value=process) as popen:
+            bridge.read_inverter('/data/SBFspot.cfg', threading.Event(), Mock())
+        args, kwargs = popen.call_args
+        self.assertEqual(args[0][0], '/usr/local/bin/SBFspot')
+        self.assertFalse(kwargs.get('shell', False))
+        self.assertNotIn('SUPERVISOR_TOKEN', kwargs['env'])
+        self.assertNotIn('HASSIO_TOKEN', kwargs['env'])
+        self.assertNotIn('private-token', repr(args[0]))
+
+    def test_start_failure_exposes_only_fixed_messages(self):
+        with self.assertLogs(bridge.LOG, level='ERROR') as logs:
+            bridge.log_start_failure(bridge.BridgeError('Ungültige Zeitzone'))
+        self.assertIn('Ungültige Zeitzone', logs.output[0])
+        with self.assertLogs(bridge.LOG, level='ERROR') as logs:
+            bridge.log_start_failure(OSError('private-password'))
+        self.assertNotIn('private-password', logs.output[0])
+
+    def test_nan_sentinels_and_malformed_numeric_tokens_are_not_zero(self):
+        for raw in ('-2147483648', '2147483647', '4294967295', 'NaN', 'inf', '123junk', '1e3'):
+            with self.subTest(raw=raw):
+                self.assertEqual(bridge.parse_output('SPOT_PACTOT: ' + raw + ' (W)\nINFO: Done.'), {})
+        self.assertEqual(bridge.parse_output('SPOT_PACTOT: 0 (W)\nINFO: Done.'), {'power_w': 0})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,349 +1,169 @@
 # SMA SBFspot MQTT für Home Assistant OS
 
-Dieses Add-on fragt **einen SMA-Wechselrichter über klassisches Bluetooth** ab
-und veröffentlicht Messwerte einzeln per MQTT. Kein Dashboard, Flask, Forecast,
-SQLite, CSV-Export oder lokales Messwertarchiv. SBFspot wird ohne SQL-Unterstützung
-gebaut; zur Laufzeit läuft nur die Python-Bridge mit dem jeweiligen SBFspot-Aufruf.
-Unterstützte Zielarchitekturen: amd64 und aarch64.
+Das Add-on liest einen SMA-Wechselrichter direkt über klassisches Bluetooth
+und veröffentlicht echte Messwerte per MQTT. Es startet nur die Python-Bridge
+und jeweils einen SBFspot-Prozess. Kein WebBox-Zugriff, HTTP-RPC-Client,
+Dashboard, Forecast, Datenbank, CSV-Export oder Bluetooth-/D-Bus-Dienst.
+Unterstützte Architekturen: amd64 und aarch64.
 
-## Installation über das Repository
+## Installation und Bluetooth
 
-Im Add-on-Store unter **Repositories** diese Adresse hinzufügen:
-`https://github.com/johannes667/sma-sbfspot-runtime`.
-Danach **SMA SBFspot MQTT** installieren und die folgenden Bluetooth- und
-MQTT-Einstellungen konfigurieren. Für Updates im Store nach Updates suchen.
+1. Im Add-on-Store unter Repositories
+   `https://github.com/johannes667/sma-sbfspot-runtime` hinzufügen.
+2. **SMA SBFspot MQTT** installieren. SBFspot wird beim Image-Build kompiliert.
+3. Einen kompatiblen klassischen Bluetooth-Adapter am HAOS-Host bereitstellen;
+   bei Unraid/VM an die HAOS-VM durchreichen. Ein ESPHome-Proxy genügt nicht.
+4. `inverter_bluetooth_address` auf die MAC des Wechselrichters setzen,
+   `inverter_password` auf dessen Benutzerpasswort. `local_bluetooth_address`
+   bleibt bei einem Adapter normalerweise leer. `timezone` ist eine IANA-Zeitzone.
+5. MQTT konfigurieren, speichern und starten. Bei `discovery: true` erscheinen
+   ausschließlich tatsächlich gelieferte Messgrößen in der MQTT-Integration.
 
-## Installation als lokales Add-on
+Für eine lokale Installation den Ordner `sbfspot_mqtt` nach `/addons/` kopieren
+und im Add-on-Store nach Updates suchen. Ein erster Build benötigt Internet.
 
-1. ZIP entpacken und den Ordner `sbfspot_mqtt` nach `/addons/` auf dem HAOS-Host
-   kopieren, z. B. über die `addons`-Freigabe des Samba-Add-ons.
-   Danach muss `/addons/sbfspot_mqtt/config.yaml` existieren.
-2. Unter **Einstellungen → Add-ons → Add-on-Store** im Menü nach Updates suchen.
-   Das Add-on erscheint unter **Lokale Add-ons**. Installieren; der erste Build
-   kompiliert SBFspot und benötigt Internet sowie etwas Zeit.
-3. Einen mit SMA kompatiblen Bluetooth-Adapter am HAOS-Host bereitstellen. Bei
-   einer VM muss der Adapter an die HAOS-VM durchgereicht werden. Klassisches
-   Bluetooth ist erforderlich; ein ESPHome-Bluetooth-Proxy reicht nicht.
-4. `inverter_bluetooth_address` auf die Bluetooth-MAC **des Wechselrichters**
-   setzen. `local_bluetooth_address` ist optional die MAC des lokalen Adapters.
-   Das Benutzerpasswort des Wechselrichters unter `inverter_password` eintragen.
-5. Mosquitto und die MQTT-Integration in Home Assistant einrichten. Bei leerem
-   `mqtt_host` liest das Add-on den MQTT-Dienst samt Zugangsdaten über den
-   Supervisor aus. Für einen externen Broker Host, Port und Zugangsdaten setzen.
-6. Starten und das Add-on-Protokoll prüfen. Bei `discovery: true` erscheinen die
-   unterstützten Sensoren automatisch in der MQTT-Integration.
+## Update auf 1.3.0: vorhandene Entitäten behalten
 
-## Änderungsgesteuerte MQTT-Veröffentlichung
+Die WebBox-Erweiterung aus 1.2.x ist vollständig entfernt. Nur Bluetooth ist
+verfügbar. Die bisherigen Optionen `source` und `webbox_*` entfallen; der
+Supervisor ignoriert unbekannte Optionen bei der Validierung. Falls sie noch
+im YAML-Editor angezeigt werden, können sie entfernt werden. Die Bridge
+ignoriert solche alten Schlüssel auch dann, wenn sie noch in options.json stehen.
 
-SBFspot hat hier keine Push-Schnittstelle für Messwertänderungen. Deshalb wird
-nach jedem abgeschlossenen Lauf `poll_seconds` gewartet (Standard 30, Minimum 10).
-Die Dauer der Bluetooth-Abfrage kommt dazu. Archive und Ereignisabfragen sind
-deaktiviert; jede Abfrage hat ein Zeitlimit von 90 Sekunden.
-
-Nur geänderte Werte werden danach an MQTT gesendet, QoS 1 und retained.
-Beispiel: `sma/sbfspot/power_w` mit Payload `1234`. Bleibt die Leistung gleich,
-folgt keine weitere Messwertnachricht. Es gibt keinen fortlaufenden Zeitstempel,
-der unnötige MQTT-Änderungen erzeugt. MQTT-Keepalive bleibt technisch erforderlich.
-
-Ausnahmen: Beim Start, bei erneuter MQTT-Verbindung und beim Home-Assistant-
-Birth-Signal werden Discovery und die noch gültigen Messwerte aus dem RAM erneut
-veröffentlicht. Dafür wird keine zusätzliche Bluetooth-Abfrage gestartet. Die
-Auslesung läuft auch während eines MQTT-Ausfalls weiter; beim Wiederverbinden
-wird der jüngste noch gültige Stand gesendet. Zwischenstände werden nicht gepuffert.
-QoS 1 kann auf Protokollebene Duplikate erzeugen. Es wird keine Messwertdatei geschrieben.
-
-Weitere Topics sind z. B. `energy_today_kwh`, `energy_total_kwh`, `pac1_w`,
-`dc_voltage_1_v`, `dc_current_1_a`, `temperature_c` und `frequency_hz`.
-Discovery wird nur für tatsächlich gelieferte Messgrößen angelegt. Die Bridge
-unterstützt einen Wechselrichter sowie DC-Strings 1/2 und AC-Phasen 1/2/3.
-
-## Lesefehler und veraltete Messwerte
-
-Ein fehlgeschlagener Lauf wird einmal nach `retry_seconds` wiederholt (Standard 5).
-Nach weiteren Fehlern wächst die Pause schrittweise bis 300 Sekunden; eine größer
-konfigurierte normale Abfragepause bleibt dabei erhalten. Erfolgreiche Abfragen
-setzen die Pause wieder auf `poll_seconds` zurück. Es läuft nur ein SBFspot-Prozess.
-
-Während kurzer Lesefehler bleiben die letzten echten Messwerte verfügbar. Jeder
-Sensor wird nach `stale_after_seconds` ohne eigene gültige Messung auf `offline`
-gesetzt (Standard 180 Sekunden). Eine weiterhin gelesene Temperatur hält somit
-keine ausgefallene Leistungsmessung unbegrenzt verfügbar. MQTT Discovery nutzt
-sowohl `<mqtt_base_topic>/availability` als auch
-`<mqtt_base_topic>/<messwert>/availability`; beide müssen `online` sein.
-Wenn alle Messwerte abgelaufen sind, ist auch die gemeinsame Availability offline.
-Beim Stoppen oder MQTT-Verbindungsabbruch setzt MQTT Last Will die gemeinsame
-Availability offline. Ein MQTT-Ausfall kann deshalb weiterhin eine echte Lücke zeigen.
-
-Die Alterungsprüfung läuft auch zwischen Abfragen und während eines laufenden
-SBFspot-Prozesses. Bei gestörtem MQTT kann die Übertragung einer Statusänderung
-bis zur Wiederverbindung dauern. Im Broker bleiben Retained-Messwerte gespeichert;
-die Availability kennzeichnet, ob diese noch gültig sind. Die kurze Überbrückung
-ist keine neue Messung. Nach einem Neustart gibt es keine gespeicherten Messwerte;
-bis zur ersten gültigen Abfrage bleiben die Sensoren nicht verfügbar.
-
-Fehlende Werte werden nicht als 0 veröffentlicht. Dafür korrigiert ein kleiner
-Patch auch die vorgelagerte Umwandlung von SMA-NaN-Markierungen in 0 innerhalb
-von SBFspot. Korrekt empfangene Werte eines abgeschlossenen Laufs können auch bei
-einem Fehlercode für andere Messgrößen weiterverwendet werden. Echte 0-W-Werte
-und schnelle Leistungseinbrüche werden unverändert veröffentlicht; es gibt keine
-Glättung oder Ausreißerunterdrückung.
-
-`<mqtt_base_topic>/status` zeigt `waiting`, `online`, `retrying`, `stale` oder
-`error`. Status- und Availability-Nachrichten werden ebenfalls nur bei Änderung
-bzw. nach einer erneuten MQTT-/HA-Verbindung gesendet.
-
-## Fehlersuche bei PV-Aussetzern
-
-`log_level: debug` protokolliert jede erfolgreiche Abfrage mit Dauer, Exit-Code,
-Bluetooth-Signal (falls geliefert) und den echten Messwerten. Fehlermeldungen
-unterscheiden Passwortablehnung, Verbindungsinitialisierung, fehlerhafte
-SBFspot-Abfragen und Zeitüberschreitungen, ohne Rohdaten oder Passwörter auszugeben.
-Nach der Diagnose wieder `log_level: info` wählen. Die Protokollzeit kann von der
-Anzeigezeit des Telefons abweichen; beim Abgleich die Zeitzone beachten.
-
-Nur **ein** Programm sollte den Wechselrichter gleichzeitig auslesen. Einen alten
-Docker-Collector oder Sunny Explorer zum Vergleich beenden. Bei Verbindungsfehlern
-Adapterposition, Funkreichweite, USB-Verlängerung und gegebenenfalls konkurrierenden
-Zugriff auf denselben Adapter prüfen. Eine längere Pause kann Funk und Gerät
-entlasten, ersetzt aber keine Fehlerdiagnose.
-
-Ein längeres Intervall verpasst kurzzeitige Leistungsänderungen. Die App liest
-aktuelle Momentanwerte und rekonstruiert keine Zwischenwerte. Die Energiezähler
-im Wechselrichter erfassen den Ertrag unabhängig vom Abfrageintervall weiter.
-Historische Aussetzer im HA-Verlauf werden durch dieses Update nicht nachträglich
-repariert. Ob ein beobachteter Einbruch real war, lässt sich nur anhand gleichzeitiger
-Rohmesswerte, Fehlerprotokolle oder einer unabhängigen Referenz feststellen.
-
-## Optionen
-
-- `poll_seconds`: Pause zwischen Bluetooth-Abfragen, kein MQTT-Sendeintervall.
-- `retry_seconds`: Wartezeit vor der einmaligen schnellen Wiederholung, Standard 5.
-- `stale_after_seconds`: Maximales Alter einer Sensormessung, Standard 180.
-  Größer als Abfragepause plus üblicher Abfragedauer wählen, bei Bedarf auch größer
-  als die Dauer eines Fehlversuchs. Dieser Zeitraum hält ausdrücklich alte Werte verfügbar.
-- `log_level`: `info` oder vorübergehend `debug`.
-- `mqtt_tls`: Bei manuellem Broker TLS mit Prüfung gegen öffentliche System-CAs;
-  typischerweise Port 8883. Der automatische MQTT-Dienst liefert seine TLS-Einstellung.
-  Private CA-Zertifikate werden in dieser schlanken Version nicht konfiguriert.
-- `mqtt_base_topic`: Standard `sma/sbfspot`. Für mehrere Add-on-Instanzen getrennte
-  Topics und `device_id` verwenden. Topic-Wechsel löscht alte Retained-Daten nicht.
-- `discovery`: Standard `true`; mit `false` nur Messwerte und Availability.
-- `discovery_prefix`: Standard `homeassistant`, muss zur MQTT-Integration passen.
-- `device_id`: Stabile Kennung; nicht nachträglich ändern, um doppelte Entitäten
-  zu vermeiden. Beim Umstieg von der Docker-Version deren Kennung übernehmen,
-  sofern dieselben Sensoren weiterverwendet werden sollen.
-- `device_name`: Anzeigename in Home Assistant.
-- `timezone`: SBFspot-Zeitzone, Standard `Europe/Berlin`.
-
-Die Bridge verändert weder Wechselrichterzeit noch Parameter und meldet sich
-als Benutzer an. Die Konfiguration inklusive Wechselrichterpasswort liegt im
-privaten Add-on-Datenverzeichnis mit Dateirechten 0600. Es werden keine
-Passwörter oder SBFspot-Rohdaten ins Protokoll geschrieben.
-
-## Bluetooth-Zugriff und Größe
-
-Für direkte Linux-HCI-Sockets verwendet das Add-on Host-Netzwerk,
-`NET_ADMIN`/`NET_RAW` und ein deaktiviertes AppArmor-Profil. Es startet keinen
-eigenen Bluetooth-/D-Bus-Dienst und benötigt keinen Zugriff auf den Docker-Socket.
-Adapter und Funkreichweite müssen zum SMA-Gerät passen. Kein vollständiger
-privilegierter Containerzugriff (`full_access`).
-
-Der Build enthält Compiler und Git nur in der Builder-Stufe. Das Laufzeitimage
-enthält die benötigten Bluetooth-/Boost-Bibliotheken, Python und Paho MQTT.
-
-SBFspot: https://github.com/SBFspot/SBFspot, festgelegter Quellstand
-`b77f65047e9f4a136a09677838f6b4e5024862ee`.
-SBFspot steht unter CC BY-NC-SA 3.0; seine Lizenz wird im Image mitgeliefert.
-
-Der SBFspot-Build enthält seit Add-on-Version 1.1.0 die Änderung aus
-`sbfspot-valid-values.patch`, um ungültige SMA-Werte als fehlend zu behandeln.
-
-## Sunny WebBox mit Bluetooth über LAN (ab 1.2.0)
-
-Die Datenquelle ist umschaltbar. Ohne `source` bleibt das bisherige Bluetooth-
-Verhalten erhalten. Mit `source: webbox` spricht nur die WebBox per Bluetooth mit
-dem Wechselrichter; am HAOS-/Unraid-Host ist kein Bluetooth-Adapter erforderlich.
-Es startet weder SBFspot noch ein Bluetooth-Dienst. MQTT, Discovery, Retain,
-Änderungserkennung, Retry/Backoff und sensorweise Alterung werden gemeinsam genutzt.
-Es gibt keine zusätzlichen Python-Abhängigkeiten.
+**Keine Konfiguration zurücksetzen, kein Gerät und keine Entität löschen.**
+Folgende bestehenden Werte exakt beibehalten:
 
 ```yaml
-source: webbox
-webbox_host: 192.168.2.100  # Beispiel: durch eigene LAN-Adresse ersetzen
-webbox_port: 80
-webbox_password: ""       # WebBox-Benutzerpasswort, nicht HTTP Basic Auth
-webbox_device_key: ""     # exakten Schlüssel aus Diagnose übernehmen
-webbox_timeout_seconds: 10
-webbox_diagnostics: false
-webbox_channels: []
-poll_seconds: 30
-stale_after_seconds: 180
+mqtt_base_topic: sma/sbfspot
+discovery_prefix: homeassistant
+device_id: sma_sbfspot_amann  # Beispiel: eigene bisherige Kennung beibehalten
+device_name: SMA Wechselrichter Amann
 ```
 
-Bluetooth-Adressen und `inverter_password` werden im LAN-Modus nicht ausgewertet
-und dürfen leer bleiben. `timezone` gilt weiterhin nur für SBFspot.
-`webbox_host` akzeptiert einen Hostnamen oder eine IPv4-Adresse ohne Schema/Pfad;
-IPv6 und HTTPS werden derzeit nicht unterstützt. Port und Timeout sind einstellbar
-(Timeout 1–60 Sekunden). Leeres Passwort lässt das optionale `passwd`-Feld weg;
-ansonsten wird der MD5-Hash des WebBox-Benutzerpassworts übertragen. Keine
-Installer-Zugangsdaten verwenden. HTTP bietet keine Transportverschlüsselung;
-die Verbindung gehört ins vertrauenswürdige lokale Netzwerk.
+Die Gerätekennung lautet weiterhin `device_id`, die Unique ID jedes Sensors
+`<device_id>_<sensor>`, das Discovery-Topic
+`<discovery_prefix>/sensor/<device_id>/<sensor>/config`. State-Topics bleiben
+`<mqtt_base_topic>/<sensor>`. Auch Einheiten, State Classes und Availability
+bestehender Discovery-Payloads bleiben unverändert. Ein Regressionstest vergleicht
+alle 22 möglichen Discovery-Payloads mit Version 1.2.2. Die tatsächlich verwendeten
+Entity IDs verwaltet Home Assistant; vorhandene Benutzerbenennungen bleiben dort.
 
-### Verifiziertes Protokoll und bewusste Grenzen
+Das Update erzeugt keine neuen Gerätekennungen und löscht keine Discovery-
+Nachrichten. Zuvor entfernte Forecast-/DC-Gesamt-/Wirkungsgrad-Sensoren werden
+nicht wieder angelegt. Nicht unterstützte Phasen werden nicht künstlich erzeugt.
 
-Primärquelle: [SMA Sunny WebBox RPC, Version 1.4](https://files.sma.de/downloads/SWebBoxRPC-BA-en-14.pdf),
-Kapitel 2.2, 4–7. HTTP POST an `/rpc`, `RPC=` gefolgt vom JSON-Objekt im Body, RPC-Version `1.0`,
-`format: JSON`, korrelierte `id` und optionaler MD5-Hash in `passwd`.
-Kein JSON-RPC-2.0-Endpunkt und keine Basic-Auth-Anmeldung.
+## MQTT und Energy Dashboard
 
-`GetDevices` liefert die hierarchische Geräteliste. Ein konfigurierter Schlüssel
-wird exakt ausgewählt. Automatisch wird ausschließlich ein einzelner Schlüssel
-mit Präfix `SB` oder `WR` ausgewählt. Bei anderen Typkennungen oder mehreren
-Wechselrichtern muss `webbox_device_key` gesetzt werden; keine Summierung.
-`GetProcessData` fragt alle gelieferten Kanäle genau dieses Geräts ab und wertet
-`meta`, `value` und `unit` aus. Keine Schreibprozeduren sind zugelassen.
+Bei leerem `mqtt_host` fragt das Add-on die MQTT-Diensteinstellungen beim
+Supervisor ab. Alternativ `mqtt_host`, `mqtt_port`, `mqtt_username` und
+`mqtt_password` für einen eigenen Broker konfigurieren.
+`mqtt_tls: true` aktiviert Zertifikatsprüfung gegen die System-CAs; üblicher
+TLS-Port ist 8883. Private CAs sind nicht konfigurierbar. Zugangsdaten nie in
+Hostnamen, Topics oder Logausgaben eintragen.
 
-`GetPlantOverview` ist dokumentiert, liefert jedoch Anlagenwerte. Deshalb wird
-es nicht für bestehende Wechselrichter-Entitäten verwendet. `GetProcessDataChannels`
-ist ebenfalls dokumentiert, aber das SMA-Beispiel verwendet abweichend
-`GetProDataChannels`. Die Diagnose benötigt diese uneindeutige Prozedur nicht:
-`GetProcessData` ohne Kanalauswahl liefert bereits Metanamen, Einheiten und Werte.
+Messwerte, Discovery, Availability und Status werden mit QoS 1 und Retain
+veröffentlicht. Nur geänderte Payloads werden gesendet; der Cache wird erst nach
+Bestätigung des Brokers aktualisiert. QoS 1 kann protokollbedingt Duplikate liefern.
+Nach MQTT-Wiederverbindung oder HA-Birth (`<discovery_prefix>/status = online`)
+werden Discovery und noch frische RAM-Werte erneut übertragen, ohne zusätzliche
+Bluetooth-Abfrage. Ein Broker-Ausfall stoppt die Auslesung nicht. Keine dauerhafte
+Messwertspeicherung, keine Warteschlange mit historischen Messungen.
 
-SMA empfiehlt mindestens 30 Sekunden **zwischen zwei RPC-Anfragen** (Kapitel 4.3).
-Das gilt hier auch zwischen Geräteerkennung und Messabfrage, Diagnoseaufrufen und
-Fehlversuchen. `poll_seconds` muss im WebBox-Modus mindestens 30 sein; der
-Bluetooth-Modus behält sein Minimum von 10. Nach einer abgeschlossenen Messung
-wird das konfigurierte Intervall gewartet. Die Erkennung benötigt beim ersten
-Start somit zusätzlich mindestens 30 Sekunden. Keine parallelen RPC-Abfragen;
-die MQTT-/Alterungsprüfung läuft während Abfragen und Wartezeiten weiter.
-Wiederholungen im WebBox-Modus frühestens nach 30 Sekunden, danach begrenzter
-Backoff wie bisher. Andere RPC-Clients während des Tests beenden.
+Unterstützte Sensor-Kennungen:
 
-### Tatsächlich unterstützte Messwerte
-
-Die RPC-Dokumentation enthält ausdrücklich **keine Beispielantwort der
-Bluetooth-WebBox**. Deshalb sind nur drei eindeutig dokumentierte Prozesskanäle
-vorbelegt. Auch sie werden ausschließlich bei tatsächlich geliefertem Metanamen,
-gültigem Zahlenwert und passender Einheit veröffentlicht:
-
-| Sensor / bisherige MQTT-Kennung | Vorbelegter Metaname | HA-Einheit |
+| Messgröße | MQTT-Kennung | Einheit |
 | --- | --- | --- |
-| AC-Gesamtleistung `power_w` | `Pac` | W |
-| Gesamtertrag `energy_total_kwh` | `E-Total` | kWh |
-| Netzfrequenz `frequency_hz` | `Fac` | Hz |
-
-**Für die konkrete Bluetooth-WebBox bleiben alle Kanalnamen und ihre tatsächliche
-Verfügbarkeit bis zur Diagnose unbestätigt.** Die folgenden bestehenden Sensoren
-sind über explizites Mapping verwendbar, sobald der reale Kanal und seine
-Bedeutung nachgewiesen sind:
-
-| Messgröße | Sensor-Kennung | Ziel-Einheit |
-| --- | --- | --- |
-| Tagesertrag | `energy_today_kwh` | kWh |
-| DC-Leistung String 1/2 | `pdc1_w`, `pdc2_w` | W |
-| DC-Spannung String 1/2 | `dc_voltage_1_v`, `dc_voltage_2_v` | V |
-| DC-Strom String 1/2 | `dc_current_1_a`, `dc_current_2_a` | A |
-| AC-Leistung Phase 1/2/3 | `pac1_w`, `pac2_w`, `pac3_w` | W |
-| AC-Spannung Phase 1/2/3 | `ac_voltage_1_v` bis `ac_voltage_3_v` | V |
-| AC-Strom Phase 1/2/3 | `ac_current_1_a` bis `ac_current_3_a` | A |
-| Temperatur | `temperature_c` | °C |
+| AC-Gesamtleistung | `power_w` | W |
+| Tages-/Gesamtertrag | `energy_today_kwh`, `energy_total_kwh` | kWh |
+| AC-Leistung je Phase | `pac1_w`, `pac2_w`, `pac3_w` | W |
+| AC-Spannung/-Strom | `ac_voltage_1_v` bis `ac_voltage_3_v`, `ac_current_1_a` bis `ac_current_3_a` | V / A |
+| DC-Leistung je Eingang | `pdc1_w`, `pdc2_w` | W |
+| DC-Spannung/-Strom | `dc_voltage_1_v`, `dc_voltage_2_v`, `dc_current_1_a`, `dc_current_2_a` | V / A |
+| Wechselrichtertemperatur | `temperature_c` | °C |
+| Netzfrequenz | `frequency_hz` | Hz |
 | Betriebs-/Einspeisestunden | `operation_time_h`, `feed_in_time_h` | h |
 
-`webbox_channels` ist eine Liste von Objekten mit `sensor` (Kennung oben) und
-`channel` (exakter, bestätigter `meta`-Wert aus der Diagnose). Ein Eintrag ersetzt
-für diesen Sensor die Vorbelegung. Ein Kanal darf nicht mehreren Sensoren
-zugewiesen werden. Keine Zuordnung anhand übersetzter Anzeigenamen, kein Raten
-von Phasen oder Strings und keine Berechnung fehlender DC-Leistung aus U × I.
-
-Umrechnung ausschließlich anhand der gelieferten Einheit: W/kW → W,
-Wh/kWh/MWh → kWh, V/mV → V, A/mA → A, s/h → h; Hz und °C unverändert.
-Fehlende/unbekannte Einheiten, doppelte Metanamen, ungültige Werte und SMA-
-Fehlwertmarkierungen werden verworfen. Punkt ist das RPC-Dezimalzeichen.
-Fehlende Werte erzeugen weder Discovery noch einen Nullzustand. Bereits bekannte,
-später fehlende Sensoren laufen individuell ab und bleiben als unavailable erhalten.
-Beim Quellenwechsel bleiben Topic und Unique ID `<device_id>_<sensor>` identisch.
-`device_id`, `mqtt_base_topic` und `discovery_prefix` deshalb beibehalten.
+Nur Werte eines abgeschlossenen Laufs werden übernommen. Fehlende/ungültige
+Messwerte werden nie durch 0 ersetzt. Ein SBFspot-Patch verhindert bereits die
+Umwandlung von SMA-NaN-Markierungen in Nullen. Echte Nullen bleiben gültig.
+Optionale Lesefehler dürfen gültige andere Messwerte desselben Laufs nicht verwerfen.
 
 Beide Energiezähler behalten `device_class: energy`, `state_class: total_increasing`
-und kWh. Für das Energy Dashboard vorzugsweise den echten Gesamtertragszähler
-als Solarproduktion wählen. Tageszähler nur bei bestätigtem Tagesreset mappen;
-kein Ableiten aus dem Gesamtzähler, kein künstliches Zurücksetzen. Vor dem Wechsel
-prüfen, dass WebBox und Bluetooth denselben Wechselrichter/Zähler abbilden.
+und kWh. Im Energy Dashboard den bestehenden Gesamtertragszähler als
+Solarproduktion weiterverwenden. Kein künstliches Zurücksetzen oder Berechnen
+eines Tageszählers. Historische Lücken werden nicht nachträglich aufgefüllt.
 
-### Sichere Diagnose und Test in Home Assistant
+## Abfrageintervall, Fehler und Availability
 
-1. Add-on stoppen, mindestens 30 Sekunden seit der letzten WebBox-RPC-Anfrage
-   warten. Obige LAN-Konfiguration mit `webbox_diagnostics: true` speichern.
-2. Add-on starten. Es liest einmal `GetDevices`, gibt nur die Geräteschlüssel
-   im Protokoll aus und beendet sich ohne MQTT-Veröffentlichung.
-3. Den Schlüssel des Sunny Boy unter `webbox_device_key` eintragen. Wieder
-   mindestens 30 Sekunden warten und starten. Die Diagnose liest Geräte und
-   anschließend alle Prozesskanäle des gewählten Geräts. Sie zeigt `meta`,
-   `name`, `value`, `unit` und die bereits zugeordneten Messwerte.
-4. Zur Zuordnung diese Kanalliste sowie Wechselrichtermodell und WebBox-Firmware
-   liefern. Seriennummern/Geräteschlüssel dürfen konsistent anonymisiert werden;
-   Kanalnamen, Werte und Einheiten unverändert lassen. **Keine options.json,
-   Passwörter, Passwort-Hashes oder vollständigen Request-Dumps teilen.**
-   Falls eine Kanalbedeutung unklar bleibt, zusätzlich die Kanalbeschreibung
-   aus der SMA-Messwerte-Dokumentation des konkreten Wechselrichters liefern.
-5. Bestätigte Zuordnungen als `webbox_channels` eintragen, Diagnose auf `false`
-   setzen, mindestens 30 Sekunden warten und Add-on normal starten. Alternativ
-   ist die Diagnose im Container mit `python3 /app/bridge.py --diagnose-webbox`
-   verfügbar; niemals neben dem laufenden Collector ausführen.
-6. In **Einstellungen → Geräte & Dienste → MQTT** Sensoren prüfen. Mit
-   `log_level: debug` RPC-Status, Antwortdauer und Anzahl gültiger Messwerte
-   prüfen; keine Passwort-/Hash-Ausgaben. MQTT-Topics und vorhandene Unique IDs
-   mit dem bisherigen Betrieb vergleichen. Bei unveränderten Werten erfolgen
-   keine wiederholten State-Nachrichten.
-7. WebBox-LAN trennen: nach `stale_after_seconds` müssen Sensoren unavailable
-   werden, ohne neue 0-Werte. Wieder verbinden: automatische Erholung abwarten.
-   Auch einen einzelnen fehlenden Kanal prüfen; andere Sensoren bleiben gültig.
-8. Für den Rückwechsel `source: bluetooth` sowie gültige bisherige Bluetooth-
-   Optionen setzen. `webbox_diagnostics` wird dabei ignoriert.
+- `poll_seconds`: Pause nach abgeschlossener Abfrage, Standard 30, Minimum 10,
+  Maximum 3600 Sekunden. Die Abfragedauer kommt dazu; keine garantierte Echtzeit.
+- `retry_seconds`: einmalige schnelle Wiederholung, Standard 5, Bereich 1–60.
+  Danach begrenzter exponentieller Backoff bis 300 Sekunden; ein längeres
+  normales Abfrageintervall bleibt erhalten.
+- `stale_after_seconds`: maximales Alter jedes einzelnen Sensors, Standard 180,
+  Bereich 30–7200. Größer als Abfragepause plus übliche Abfragedauer wählen.
+- `log_level`: normalerweise `info`; `debug` für Dauer, Exit-Code, Bluetooth-Signal
+  und geparste Messwerte. Keine Rohantworten oder Passwörter im Log.
 
-Die Stale-Erkennung misst die Zeit seit der letzten gültigen RPC-Lieferung.
-Das dokumentierte Kanalobjekt enthält keinen Messzeitstempel. Wiederholt eine
-WebBox intern eingefrorene Cache-Werte mit gültigen Antworten, kann die Bridge
-das nicht von konstanten Messungen unterscheiden. Das Erfassungsintervall und
-den Bluetooth-Verbindungsstatus der WebBox zusätzlich prüfen. Ein Intervall
-von 30 Sekunden garantiert keine neuen Wechselrichtermessungen alle 30 Sekunden.
+Jede Abfrage hat ein Zeitlimit von 90 Sekunden. Es läuft maximal ein Prozess;
+bei Abbruch/Timeout wird er beendet und eingesammelt. MQTT-/Alterungsprüfung
+läuft auch während der Abfrage. Nach einem Fehler bleiben echte Messwerte nur
+bis zum Ablauf ihrer jeweiligen Altersgrenze verfügbar.
 
-### Rechte und Verifikation
+Discovery verlangt sowohl `<mqtt_base_topic>/availability` als auch
+`<mqtt_base_topic>/<sensor>/availability` auf `online`. Einzelne fehlende Sensoren
+laufen unabhängig ab. Wenn alle Werte abgelaufen sind, geht auch die gemeinsame
+Availability offline. Bei sauberem Stoppen wird offline gesendet; bei einem
+Verbindungsabbruch übernimmt MQTT Last Will. Retained-State-Werte bleiben im
+Broker gespeichert, Availability kennzeichnet ihre Gültigkeit.
+`<mqtt_base_topic>/status` zeigt `waiting`, `online`, `retrying`, `stale` oder `error`.
 
-HAOS-Containerrechte gelten statisch für das gesamte Add-on und lassen sich nicht
-per Laufzeitoption umschalten. `host_network`, `NET_ADMIN`, `NET_RAW` und das
-bestehende AppArmor-Verhalten bleiben für Bluetooth-Kompatibilität erhalten.
-Der LAN-Code benötigt diese Sonderrechte nicht und verwendet sie nicht; auf einem
-separat gepflegten lokalen LAN-only-Build können sie entfernt werden. Dieses
-Update erstellt kein zweites Add-on und ändert die Rechte bestehender Installationen
-nicht. Das gemeinsame Image enthält weiterhin SBFspot für den Quellenwechsel.
+## Sicherheit und Best Practices
 
-Automatisierte Prüfung: `python3 -m unittest discover -s tests -v` im Repository.
-Die WebBox-Tests verwenden simulierte dokumentierte RPC-Antworten, keine reale
-Bluetooth-WebBox-Aufzeichnung. Ein Hardwaretest und ein HAOS-Image-Build bleiben
-vor produktiver Freigabe erforderlich.
+- Keine zusätzlichen Container-Capabilities, insbesondere kein `NET_ADMIN` oder
+  zusätzlich angefordertes `NET_RAW`. Kein Docker-Socket, kein `full_access`,
+  kein Zugriff auf HA-Konfigurationsordner oder eigene Netzwerkdienste.
+- Standard-AppArmor-Profil ist aktiviert. Host-Netzwerk bleibt nötig, damit die
+  Linux-Bluetooth-Sockets den Host-Adapter erreichen. Der geprüfte SBFspot-Code
+  verwendet RFCOMM, keine direkte HCI-Steuerung. Der Adapter muss bereits vom
+  Host initialisiert sein. Protection Mode aktiviert lassen.
+- Supervisor-Zugriff ausschließlich für den MQTT-Dienst mit Standardrolle;
+  keine Manager-/Admin-Rolle. Der Token wird nicht an SBFspot vererbt. HTTP-
+  Redirects und Proxy-Nutzung für den Supervisor-Aufruf sind ausgeschaltet.
+- SBFspot läuft als Benutzer des Wechselrichters (`User=user`) und ohne
+  Zeitabgleich (`SynchTime=0`), Archive, SQL oder CSV. Keine Shell-Ausführung.
+- Generierte Passwortkonfiguration: atomischer Austausch mit Dateirechten 0600,
+  auch nach älteren zu offenen Dateirechten. Keine Symlink-Verfolgung am Ziel;
+  temporäre Dateien werden nach Fehlern entfernt. Die options.json wird vom
+  Supervisor verwaltet und enthält weiterhin die vom Nutzer gesetzten Geheimnisse.
+- Eigene Fehlermeldungen sind bereinigt. Fremde Exception-Texte, HTTP-Antworten
+  und Konfigurationsinhalte werden nicht protokolliert. Eingaben werden vor
+  Prozessstart geprüft. Python startet isoliert (`-I`), ohne Bytecode-Dateien.
+- Mehrstufiger Build: Compiler und Git bleiben außerhalb des Laufzeitimages.
+  Python verwendet nur die Standardbibliothek und das Paho-Paket von Debian.
+  Bibliotheken bleiben über Debian-Sicherheitsupdates aktualisierbar.
 
-### Fehler beim Diagnosestart
+Grundlagen: [HA App-Sicherheit](https://developers.home-assistant.io/docs/apps/security/),
+[MQTT Discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery),
+[Python subprocess](https://docs.python.org/3/library/subprocess.html#security-considerations),
+[Python tempfile](https://docs.python.org/3/library/tempfile.html#tempfile.mkstemp),
+[Docker-AppArmor-Profil](https://github.com/moby/profiles/blob/main/apparmor/template.go).
+SBFspot ist auf Quellstand `b77f65047e9f4a136a09677838f6b4e5024862ee` festgelegt;
+[Bluetooth-Implementierung](https://github.com/SBFspot/SBFspot/blob/b77f65047e9f4a136a09677838f6b4e5024862ee/SBFspot/Bluetooth.cpp).
+Lizenz CC BY-NC-SA 3.0; die Lizenz liegt auch im Image.
 
-Ab 1.2.1 zeigt `WebBox-Start fehlgeschlagen: ...` die bereinigte Ursache:
-HTTP-Status, RPC-Fehler, Zeitlimit, Netzwerkfehler oder unerwartetes Antwortformat.
-Diese Zeile ohne Konfigurationsdatei weitergeben. Version 1.2.0 meldete hier
-lediglich `Start fehlgeschlagen (WebBoxError)`; das genügt nicht zur Diagnose.
-Eine RPC-Fehlermeldung kann auf ein benötigtes WebBox-Benutzerpasswort hinweisen,
-beweist jedoch keine Passwortablehnung. Keine Zugangsdaten ins Protokoll kopieren.
+## Prüfung nach dem Update
 
-### HTTP-Transportkorrektur ab 1.2.2
+1. Bestehende MQTT-Konfiguration und Gerätekennung behalten; auf 1.3.0 aktualisieren.
+2. Starten: `MQTT verbunden` und erfolgreiche Messung im Log prüfen.
+3. Vorhandene Sensoren und Energy-Dashboard-Quelle prüfen; keine neuen Duplikate.
+4. Kurzer Funkfehler: Wiederholung ohne neue Nullwerte. Längerer Ausfall:
+   nach Altersgrenze unavailable. Wiederhergestellte Funkverbindung: automatische Erholung.
+5. Bei Bluetooth-Fehlern Adapter-/VM-Zuordnung, Host-Initialisierung und Reichweite
+   prüfen. Nur ein Collector soll den Wechselrichter direkt abfragen.
 
-Der POST-Body lautet `RPC={...}` und wird als
-`application/x-www-form-urlencoded` gesendet. Versionen 1.2.0/1.2.1 sendeten
-lediglich JSON ohne diese Hülle. Die Korrektur folgt der praktischen
-[HTTP-Implementierung SunnyWebBoxHTTP](https://github.com/ravz/SunnyWebBox/blob/master/SunnyWebBox.py).
-Ein lokaler HTTP-Servertest prüft den tatsächlich übertragenen Request und die
-Antwortzuordnung. Der Test ersetzt keinen Test an der realen WebBox.
-
-Die [HA-sma-WebBox-Integration](https://github.com/jpcornil-git/HA-sma/blob/main/custom_components/sma_webbox/sma_webbox.py)
-nutzt dagegen UDP (Port 34268) und sendet bei ihren lesenden RPC-Anfragen kein
-Passwortfeld. Eine funktionierende passwortlose Integration beweist deshalb
-noch nicht die Erreichbarkeit des HTTP-Endpunkts. Das Add-on bleibt bei HTTP;
-`webbox_port` nicht auf den UDP-Port umstellen. Wenn ohne Passwort gelesen
-werden kann, `webbox_password: ""` beibehalten. Kein Standardpasswort wird geraten.
+CI prüft Syntax/Lint, Unit-Tests, amd64-Image-Build und reale Paho-Kommunikation
+gegen einen simulierten Broker im Container ohne zusätzliche Capabilities.
+Das ersetzt keinen Hardwaretest mit deinem Adapter, keine Messwertprüfung am
+Wechselrichter und keinen aarch64-/HAOS-AppArmor-Lauf. Bei AppArmor-Problemen
+benötigt die Diagnose die entsprechende DENIED-Meldung aus dem Host-Protokoll.

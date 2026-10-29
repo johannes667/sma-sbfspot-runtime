@@ -1,11 +1,10 @@
 # SMA SBFspot MQTT
 
-Schlankes Home-Assistant-OS-Add-on: SMA Bluetooth oder Sunny WebBox über LAN → MQTT.
-Messwerte werden nur bei Änderung veröffentlicht. Für das Erkennen von
-Änderungen bleibt eine regelmäßige Geräteabfrage notwendig.
+Schlankes Home-Assistant-OS-Add-on: SMA Bluetooth → MQTT mit Home Assistant
+Discovery. Nur geänderte echte Messwerte; keine Weboberfläche, WebBox, Datenbank
+oder Forecast-Dienste. Standardintervall 30 Sekunden plus Abfragedauer.
 
-Installation und Optionen: [DOCS.md](DOCS.md).
+Ab 1.3.0 ausschließlich direktes Bluetooth. Bestehende MQTT-Gerätekennungen,
+Sensor-Unique-IDs und Topics bleiben erhalten. Konfiguration nicht zurücksetzen.
 
-Ab Version 1.2.0: `source: bluetooth|webbox`. LAN benötigt keinen Bluetooth-Stick
-am HAOS-Host. WebBox-Kanäle vor Ort per lesender Diagnose verifizieren;
-Anleitung, unterstützte Sensoren und Grenzen: [DOCS.md](DOCS.md#sunny-webbox-mit-bluetooth-über-lan-ab-120).
+Installation, Upgrade, Optionen und Sicherheitsmaßnahmen: [DOCS.md](DOCS.md).
