@@ -30,10 +30,16 @@ The C++ validity patch is checked and compiled during the image build. These tes
 do not establish compatibility with a particular Bluetooth adapter, the actual SMA
 radio link, HAOS Supervisor or the aarch64 target.
 
-WebBox LAN unit tests (`test_webbox.py`) simulate documented RPC envelopes and
-cover discovery, device selection, units, absent/invalid values, HTTP/RPC/network
-errors, timeouts, minimum request spacing, read-only procedures, MQTT identity
-compatibility, energy metadata, availability expiry/recovery, diagnostics and
-source selection without Bluetooth setup. These are not real Bluetooth-WebBox
-recordings; obtain the device-specific channels using `webbox_diagnostics: true`
-as described in the add-on DOCS.md before claiming hardware compatibility.
+Version 1.3.0 removes WebBox completely. Added regressions freeze all 22 possible
+Discovery payloads against 1.2.2 with the existing device_id sma_sbfspot_amann.
+Security tests cover atomic 0600 writes, symlinks, failed-write cleanup, topic/type
+validation, broker responses, rejected redirects, sanitized logging and excluding
+Supervisor credentials from the SBFspot child. Removed WebBox/source options are
+included in the container smoke test to prove they cannot activate LAN acquisition.
+
+The PR workflow builds the actual amd64 add-on image and runs the MQTT smoke test
+with --cap-drop ALL, --network none and no-new-privileges. The broker uses loopback
+inside that disposable container. Python runs in isolated mode and uses the actual
+Debian Paho dependency. No host hardware or external MQTT credentials are needed.
+The firmware/radio link, actual HAOS AppArmor behavior and aarch64 still require
+hardware/target validation. No tests delete Home Assistant entities or MQTT topics.

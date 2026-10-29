@@ -71,8 +71,9 @@ Path('/data/options.json').write_text(json.dumps({
     'mqtt_host': '127.0.0.1', 'mqtt_port': 18883, 'mqtt_tls': False,
     'mqtt_username': '', 'mqtt_password': '', 'mqtt_base_topic': 'sma/sbfspot',
     'discovery': True, 'discovery_prefix': 'homeassistant',
-    'device_id': 'sma_sbfspot', 'device_name': 'SMA Test',
-    'retry_seconds': 1, 'stale_after_seconds': 30, 'log_level': 'debug'}))
+    'device_id': 'sma_sbfspot_amann', 'device_name': 'SMA Test',
+    'retry_seconds': 1, 'stale_after_seconds': 30, 'log_level': 'debug',
+    'source': 'webbox', 'webbox_diagnostics': True, 'webbox_host': 'invalid/host'}))
 Path('/usr/local/bin/SBFspot').write_text('''#!/usr/bin/python3
 from pathlib import Path
 import sys
@@ -96,7 +97,7 @@ print('INFO: Done.')
 sys.exit(0 if n < 4 else 1)
 ''')
 threading.Thread(target=broker, daemon=True).start()
-proc = subprocess.Popen([sys.executable, '/app/bridge.py'])
+proc = subprocess.Popen([sys.executable, '-I', '-u', '-B', '/app/bridge.py'])
 def await_condition(condition, timeout):
     deadline = time.monotonic()+timeout
     while time.monotonic() < deadline:
@@ -109,6 +110,10 @@ def await_condition(condition, timeout):
 try:
     await_condition(lambda: ('sma/sbfspot/power_w', '101') in messages, 35)
     assert int(Path('/tmp/runs').read_text()) == 4
+    discovery = dict(messages)['homeassistant/sensor/sma_sbfspot_amann/power_w/config']
+    assert json.loads(discovery)['unique_id'] == 'sma_sbfspot_amann_power_w'
+    assert json.loads(discovery)['device']['identifiers'] == ['sma_sbfspot_amann']
+    assert Path('/data/SBFspot.cfg').stat().st_mode & 0o777 == 0o600
     states = [v for t, v in messages if t == 'sma/sbfspot/power_w']
     assert states == ['100', '101'], states
     availability = [v for t, v in messages if t == 'sma/sbfspot/availability']

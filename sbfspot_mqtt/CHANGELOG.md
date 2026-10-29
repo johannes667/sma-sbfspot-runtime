@@ -1,3 +1,17 @@
+# 1.3.0
+
+- Ausschließlich direktes Bluetooth: WebBox-Code, RPC, Diagnose, Optionen und Tests entfernt.
+- Bestehende Sensoren bleiben erhalten: MQTT-Topics, Gerätekennungen, Unique IDs,
+  Einheiten, State Classes und Discovery-Payloads unverändert.
+- Keine zusätzlichen Container-Capabilities; Standard-AppArmor-Profil aktiviert.
+- Atomisches Schreiben der Passwortkonfiguration mit Rechten 0600 und ohne
+  Verfolgung vorhandener Ziel-Symlinks; Benutzerzugriff und Zeitabgleich aus.
+- Supervisor-Token nicht an SBFspot weitergeben; keine HTTP-Redirects oder Proxys
+  bei MQTT-Dienstabfragen. Zertifikatsprüfung bei MQTT-TLS bleibt aktiv.
+- Isolierter Python-Start, strengere Eingabe-/Messwertprüfung und sichere Fehlertexte.
+- Regressionstests für alle 22 möglichen Sensor-Discovery-Payloads, Konfigurations-
+  und Geheimnisschutz. CI mit Lint, Image-Build und MQTT-Container-Integrationstest.
+
 # 1.2.2
 
 - HTTP-RPC-Transport korrigiert: POST-Body verwendet die WebBox-Hülle `RPC={...}`.
