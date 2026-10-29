@@ -443,4 +443,4 @@ if __name__ == "__main__":
         main()
     except Exception as error:
         log_start_failure(error)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
